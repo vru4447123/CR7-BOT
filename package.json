@@ -1,7 +1,7 @@
 {
   "name": "len-coin-bot",
-  "version": "3.0.0",
-  "description": "LEN Coin Discord Economy Bot",
+  "version": "4.0.0",
+  "description": "LEN Coin Discord Economy Bot — JSONBin storage",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
