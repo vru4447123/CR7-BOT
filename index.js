@@ -179,6 +179,15 @@ const commands = [
       o.setName("id").setDescription("Redemption request ID").setRequired(true)
     ),
 
+  // ── Help ──────────────────────────────────────────────────────────────────
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("View all available commands"),
+
+  new SlashCommandBuilder()
+    .setName("adminhelp")
+    .setDescription("View all admin & moderation commands"),
+
   // ── Codes ─────────────────────────────────────────────────────────────────
   new SlashCommandBuilder()
     .setName("drop-code")
@@ -574,16 +583,24 @@ async function registerCommands() {
   try {
     console.log("📡 Clearing old commands and registering fresh...");
 
-    // Step 1: Wipe ALL existing global commands first
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
-      body: [],
-    });
-    console.log("🗑️  Old commands cleared.");
+    // Wipe global commands
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: [] });
+    console.log("🗑️  Global commands cleared.");
 
-    // Step 2: Register all commands fresh
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
-      body: commands,
-    });
+    // Wipe guild-level commands on every guild the bot is in (kills stale cache)
+    const guilds = client.guilds.cache;
+    for (const [guildId] of guilds) {
+      try {
+        await rest.put(
+          Routes.applicationGuildCommands(process.env.CLIENT_ID, guildId),
+          { body: [] }
+        );
+      } catch { /* skip if no perms */ }
+    }
+    console.log(`🗑️  Guild commands cleared on ${guilds.size} server(s).`);
+
+    // Register all commands fresh globally
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
     console.log(`✅ ${commands.length} slash commands registered successfully.`);
   } catch (err) {
     console.error("❌ Failed to register commands:", err);
@@ -619,6 +636,8 @@ client.on("interactionCreate", async (interaction) => {
       case "use":            return cmdUse(interaction);
       case "check-uses":        return cmdCheckUses(interaction);
       case "use-done":          return cmdUseDone(interaction);
+      case "help":              return cmdHelp(interaction);
+      case "adminhelp":         return cmdAdminHelp(interaction);
       case "drop-code":         return cmdDropCode(interaction);
       case "make-code":         return cmdMakeCode(interaction);
       case "remove-code":       return cmdRemoveCode(interaction);
@@ -1754,6 +1773,147 @@ async function cmdAnnounce(i) {
     ],
   });
   return i.reply({ content: `✅ Announcement sent to <#${channel.id}>`, ephemeral: true });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  HELP COMMANDS
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function cmdHelp(i) {
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(`${COIN_EMOJI} LEN Coin Bot — Help`)
+    .setDescription("Here's everything you can do!\n\u200B")
+    .addFields(
+      {
+        name: "💰 Economy",
+        value: [
+          "`/balance [user]` — Check your or someone's balance",
+          "`/daily` — Claim 100 free LEN Coins every 24h",
+          "`/pay <user> <amount>` — Send coins to someone",
+          "`/leaderboard` — Top 10 richest users",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "🎰 Gambling",
+        value: [
+          "`/coinflip <heads|tails> <bet>` — 50/50, win 2×",
+          "`/slots <bet>` — Spin the slots (up to 20× jackpot!)",
+          "`/blackjack <bet>` — Hit, Stand or Double Down",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "<:Robux:1483371422368792648> Shop",
+        value: [
+          "`/shop` — Browse Robux packages",
+          "`/buy <package>` — Buy a package (Robux S/M/L/XL)",
+          "`/inventory [user]` — View your items",
+          "`/use <item>` — Redeem an item (opens a form)",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "🎟️ Codes",
+        value: [
+          "`/redeem <code>` — Redeem a code for LEN Coins",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "ℹ️ Info",
+        value: [
+          "`/userinfo [user]` — View info about a user",
+          "`/serverinfo` — View server stats",
+          "`/help` — This menu",
+        ].join("\n"),
+        inline: false,
+      },
+    )
+    .setFooter({ text: "1 message = 1 LEN Coin • 100 LEN = 25 Robux" });
+
+  return i.reply({ embeds: [embed] });
+}
+
+async function cmdAdminHelp(i) {
+  if (!await guardAdmin(i)) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xff4444)
+    .setTitle("🔧 Admin Help — All Admin Commands")
+    .setDescription("Only users with **Admin Perm** role or **Administrator** permission can use these.\n​")
+    .addFields(
+      {
+        name: "<:Robux:1483371422368792648> Robux Stock",
+        value: [
+          "`/show-stock <channel> <robux>` — Post stock embed",
+          "`/set-stock <channel> <robux>` — Update existing stock embed",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "🎟️ Codes",
+        value: [
+          "`/drop-code <code> <reward> <minutes>` — Drop a timed code",
+          "`/make-code <code> <reward>` — Create a permanent code",
+          "`/remove-code <code>` — Delete a code",
+          "`/codes` — View all active codes",
+          "`/set-code-channel <channel>` — Set default code announce channel",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: `${COIN_EMOJI} Economy`,
+        value: [
+          "`/addcoins <user> <amount>` — Add coins",
+          "`/removecoins <user> <amount>` — Remove coins",
+          "`/setcoins <user> <amount>` — Set exact balance",
+          "`/resetdaily <user>` — Reset daily cooldown",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "🛒 Shop",
+        value: [
+          "`/additem <name> <price> <desc>` — Add custom shop item",
+          "`/removeitem <name>` — Remove shop item",
+          "`/giveitem <user> <item>` — Give item directly",
+          "`/clearinventory <user>` — Wipe user's inventory",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "📦 Redemptions",
+        value: [
+          "`/check-uses` — View pending Robux redemptions",
+          "`/use-done <id>` — Mark request paid, DM the user",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "🔨 Moderation",
+        value: [
+          "`/warn <user> <reason>` — Warn a user (DMs them)",
+          "`/warnings <user>` — View warnings",
+          "`/clearwarnings <user>` — Clear all warnings",
+          "`/timeout <user> <minutes>` — Timeout a user",
+          "`/untimeout <user>` — Remove timeout",
+          "`/kick <user>` — Kick from server",
+          "`/ban <user>` — Ban from server",
+          "`/unban <userid>` — Unban by ID",
+          "`/purge <amount>` — Bulk delete messages",
+          "`/slowmode <seconds>` — Set channel slowmode",
+          "`/lock [channel]` — Lock a channel",
+          "`/unlock [channel]` — Unlock a channel",
+          "`/announce <channel> <title> <msg>` — Send announcement",
+        ].join("\n"),
+        inline: false,
+      },
+    )
+    .setFooter({ text: "Admin Perm role or Administrator permission required" });
+
+  return i.reply({ embeds: [embed], ephemeral: true });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
