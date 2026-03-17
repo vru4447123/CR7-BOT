@@ -508,11 +508,19 @@ const commands = [
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   try {
-    console.log("📡 Registering slash commands...");
+    console.log("📡 Clearing old commands and registering fresh...");
+
+    // Step 1: Wipe ALL existing global commands first
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+      body: [],
+    });
+    console.log("🗑️  Old commands cleared.");
+
+    // Step 2: Register all commands fresh
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
       body: commands,
     });
-    console.log(`✅ ${commands.length} slash commands registered.`);
+    console.log(`✅ ${commands.length} slash commands registered successfully.`);
   } catch (err) {
     console.error("❌ Failed to register commands:", err);
   }
