@@ -704,7 +704,7 @@ async function cmdCoinflip(i) {
     embeds: [
       new EmbedBuilder()
         .setColor(won ? 0x00ff88 : 0xff4444)
-        .setTitle(won ? "🪙 You Won!" : "🪙 You Lost!")
+        .setTitle(won ? "<:Coin:1483370941583982612> You Won!" : "<:Coin:1483370941583982612> You Lost!")
         .setDescription(
           `The coin landed on **${result}** ${result === "heads" ? "👑" : "🔵"}\n` +
             `You guessed **${side}**\n\n` +
@@ -943,12 +943,12 @@ async function cmdShop(i) {
   const embed = new EmbedBuilder()
     .setColor(0x00b4ff)
     .setTitle("🛒  LEN Coin Shop — Robux Packages")
-    .setDescription(`**Rate: ${COIN_EMOJI} 100 LEN Coins = 🎮 15 Robux**\n\u200B`);
+    .setDescription(`**Rate: ${COIN_EMOJI} 100 LEN Coins = <:Robux:1483371422368792648> 15 Robux**\n\u200B`);
 
   ROBUX_PACKAGES.forEach((p) => {
     embed.addFields({
-      name: `🎮 ${p.name}`,
-      value: `🪙 **${p.coins.toLocaleString()} LEN** → **${p.robux} R$**\n\`/buy ${p.name}\``,
+      name: `<:Robux:1483371422368792648> ${p.name}`,
+      value: `<:Coin:1483370941583982612> **${p.coins.toLocaleString()} LEN** → **${p.robux} R$**\n\`/buy ${p.name}\``,
       inline: true,
     });
   });
@@ -959,7 +959,7 @@ async function cmdShop(i) {
       const stock =
         it.stock === -1 ? "∞" : it.stock === 0 ? "❌ Out of stock" : `${it.stock} left`;
       embed.addFields({
-        name: `${it.emoji || "📦"} ${it.name} — 🪙 ${it.price.toLocaleString()} LEN`,
+        name: `${it.emoji || "📦"} ${it.name} — <:Coin:1483370941583982612> ${it.price.toLocaleString()} LEN`,
         value: `${it.description}\nStock: ${stock}\n\`/buy ${it.name}\``,
         inline: true,
       });
@@ -978,7 +978,7 @@ async function cmdBuy(i) {
     const user = db.getUser(i.user.id, i.user.username);
     if (user.balance < pkg.coins)
       return i.reply({
-        content: `❌ Need **🪙 ${pkg.coins.toLocaleString()} LEN** — you have **${formatCoins(user.balance)}**.`,
+        content: `❌ Need **<:Coin:1483370941583982612> ${pkg.coins.toLocaleString()} LEN** — you have **${formatCoins(user.balance)}**.`,
         ephemeral: true,
       });
     db.removeCoins(i.user.id, pkg.coins);
@@ -989,8 +989,8 @@ async function cmdBuy(i) {
           .setColor(0x00ff88)
           .setTitle("✅ Purchase Successful!")
           .setDescription(
-            `Bought **🎮 ${pkg.name}** for **🪙 ${pkg.coins.toLocaleString()} LEN**\n` +
-              `You'll receive: **🎮 ${pkg.robux} Robux**\n\n` +
+            `Bought **<:Robux:1483371422368792648> ${pkg.name}** for **<:Coin:1483370941583982612> ${pkg.coins.toLocaleString()} LEN**\n` +
+              `You'll receive: **<:Robux:1483371422368792648> ${pkg.robux} Robux**\n\n` +
               `💰 Balance: **${formatCoins(db.getUser(i.user.id).balance)}**\n\n` +
               `> 📩 Contact staff to receive your Robux!`
           ),
@@ -1204,8 +1204,8 @@ function buildStockEmbed(robux, updatedBy) {
     .setTitle("STOCK")
     .setDescription(`${status}\n\u200B`)
     .addFields(
-      { name: "ROBUX", value: `\`\`\`\n🎮  ${robux.toLocaleString()} R$\n\`\`\``, inline: false },
-      { name: "💱 Rate",       value: `🪙 **100 LEN = 🎮 15 Robux**`,          inline: true },
+      { name: "ROBUX", value: `\`\`\`\n<:Robux:1483371422368792648>  ${robux.toLocaleString()} R$\n\`\`\``, inline: false },
+      { name: "💱 Rate",       value: `<:Coin:1483370941583982612> **100 LEN = <:Robux:1483371422368792648> 15 Robux**`,          inline: true },
       { name: "🛒 How to Buy", value: "`/shop` then `/buy <package>`",           inline: true }
     )
     .setFooter({ text: `Last updated by ${updatedBy?.username ?? "Admin"} • LEN Coin Store` })
