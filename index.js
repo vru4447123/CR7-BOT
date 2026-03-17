@@ -1,4 +1,4 @@
-require("dotenv").config();
+// Railway injects environment variables directly — no dotenv needed
 const {
   Client,
   GatewayIntentBits,
