@@ -179,6 +179,70 @@ const commands = [
       o.setName("id").setDescription("Redemption request ID").setRequired(true)
     ),
 
+  // ── Codes ─────────────────────────────────────────────────────────────────
+  new SlashCommandBuilder()
+    .setName("drop-code")
+    .setDescription("[Admin] Drop a code that gives LEN Coins — expires after a time limit")
+    .addStringOption((o) =>
+      o.setName("code").setDescription("The code word (e.g. SUMMER2024)").setRequired(true)
+    )
+    .addIntegerOption((o) =>
+      o.setName("reward").setDescription("Coins rewarded when redeemed").setRequired(true).setMinValue(1)
+    )
+    .addIntegerOption((o) =>
+      o.setName("minutes").setDescription("How many minutes before it expires (0 = never)").setRequired(true).setMinValue(0)
+    )
+    .addIntegerOption((o) =>
+      o.setName("max_uses").setDescription("Max number of uses (0 = unlimited)").setRequired(false).setMinValue(0)
+    )
+    .addChannelOption((o) =>
+      o.setName("channel").setDescription("Channel to announce the code drop in").setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("make-code")
+    .setDescription("[Admin] Create a permanent code saved forever in the database")
+    .addStringOption((o) =>
+      o.setName("code").setDescription("The code word (e.g. VIP100)").setRequired(true)
+    )
+    .addIntegerOption((o) =>
+      o.setName("reward").setDescription("Coins rewarded when redeemed").setRequired(true).setMinValue(1)
+    )
+    .addIntegerOption((o) =>
+      o.setName("max_uses").setDescription("Max number of uses (0 = unlimited)").setRequired(false).setMinValue(0)
+    )
+    .addChannelOption((o) =>
+      o.setName("channel").setDescription("Channel to announce the code in").setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("remove-code")
+    .setDescription("[Admin] Delete a code so it can no longer be redeemed")
+    .addStringOption((o) =>
+      o.setName("code").setDescription("The code to remove").setRequired(true)
+    )
+    .addChannelOption((o) =>
+      o.setName("channel").setDescription("Channel to announce the removal in").setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("redeem")
+    .setDescription("Redeem a code for LEN Coins")
+    .addStringOption((o) =>
+      o.setName("code").setDescription("The code to redeem").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("codes")
+    .setDescription("[Admin] View all active codes"),
+
+  new SlashCommandBuilder()
+    .setName("set-code-channel")
+    .setDescription("[Admin] Set the default channel for code announcements")
+    .addChannelOption((o) =>
+      o.setName("channel").setDescription("Channel for code announcements").setRequired(true)
+    ),
+
   // ── Info ───────────────────────────────────────────────────────────────────
   new SlashCommandBuilder()
     .setName("userinfo")
@@ -529,7 +593,9 @@ async function registerCommands() {
 // ─── Message Reward — 1 message = 1 LEN Coin, no cooldown ────────────────────
 client.on("messageCreate", (msg) => {
   if (msg.author.bot || !msg.guild) return;
+  if (!db._ready) return;   // don't count before JSONBin has loaded
   db.addCoins(msg.author.id, msg.author.username, 1);
+  console.log(`[COIN] ${msg.author.username} earned 1 coin — balance: ${db.getUser(msg.author.id).balance}`);
 });
 
 // ─── Interaction Router ────────────────────────────────────────────────────────
@@ -551,8 +617,14 @@ client.on("interactionCreate", async (interaction) => {
       case "buy":            return cmdBuy(interaction);
       case "inventory":      return cmdInventory(interaction);
       case "use":            return cmdUse(interaction);
-      case "check-uses":     return cmdCheckUses(interaction);
-      case "use-done":       return cmdUseDone(interaction);
+      case "check-uses":        return cmdCheckUses(interaction);
+      case "use-done":          return cmdUseDone(interaction);
+      case "drop-code":         return cmdDropCode(interaction);
+      case "make-code":         return cmdMakeCode(interaction);
+      case "remove-code":       return cmdRemoveCode(interaction);
+      case "redeem":            return cmdRedeem(interaction);
+      case "codes":             return cmdCodes(interaction);
+      case "set-code-channel":  return cmdSetCodeChannel(interaction);
       case "userinfo":       return cmdUserinfo(interaction);
       case "serverinfo":     return cmdServerinfo(interaction);
       case "show-stock":     return cmdShowStock(interaction);
@@ -605,7 +677,7 @@ async function cmdBalance(i) {
         .setTitle(`${COIN_EMOJI} ${target.username}'s Balance`)
         .setThumbnail(target.displayAvatarURL())
         .setDescription(`**Balance:** ${formatCoins(data.balance)}`)
-        .setFooter({ text: "1 message = 1 LEN Coin • 100 LEN = 15 Robux" }),
+        .setFooter({ text: "1 message = 1 LEN Coin • 100 LEN = 25 Robux" }),
     ],
   });
 }
@@ -940,14 +1012,14 @@ function bjEmbed(ph, dh, bet, status) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  SHOP & INVENTORY  —  Rate: 100 LEN = 15 Robux
+//  SHOP & INVENTORY  —  Rate: 100 LEN = 25 Robux
 // ══════════════════════════════════════════════════════════════════════════════
 
 const ROBUX_PACKAGES = [
-  { name: "Robux S",  coins: 100,  robux: 15  },
-  { name: "Robux M",  coins: 300,  robux: 45  },
-  { name: "Robux L",  coins: 700,  robux: 105 },
-  { name: "Robux XL", coins: 1500, robux: 225 },
+  { name: "Robux S",  coins: 100,  robux: 25  },
+  { name: "Robux M",  coins: 300,  robux: 75  },
+  { name: "Robux L",  coins: 700,  robux: 175 },
+  { name: "Robux XL", coins: 1500, robux: 375 },
 ];
 
 async function cmdShop(i) {
@@ -955,7 +1027,7 @@ async function cmdShop(i) {
   const embed = new EmbedBuilder()
     .setColor(0x00b4ff)
     .setTitle("🛒  LEN Coin Shop — Robux Packages")
-    .setDescription(`**Rate: ${COIN_EMOJI} 100 LEN Coins = <:Robux:1483371422368792648> 15 Robux**\n\u200B`);
+    .setDescription(`**Rate: ${COIN_EMOJI} 100 LEN Coins = <:Robux:1483371422368792648> 25 Robux**\n\u200B`);
 
   ROBUX_PACKAGES.forEach((p) => {
     embed.addFields({
@@ -1399,7 +1471,7 @@ function buildStockEmbed(robux, updatedBy) {
     .setDescription(`${status}\n\u200B`)
     .addFields(
       { name: "ROBUX", value: `\`\`\`\n<:Robux:1483371422368792648>  ${robux.toLocaleString()} R$\n\`\`\``, inline: false },
-      { name: "💱 Rate",       value: `<:Coin:1483370941583982612> **100 LEN = <:Robux:1483371422368792648> 15 Robux**`,          inline: true },
+      { name: "💱 Rate",       value: `<:Coin:1483370941583982612> **100 LEN = <:Robux:1483371422368792648> 25 Robux**`,          inline: true },
       { name: "🛒 How to Buy", value: "`/shop` then `/buy <package>`",           inline: true }
     )
     .setFooter({ text: `Last updated by ${updatedBy?.username ?? "Admin"} • LEN Coin Store` })
@@ -1682,6 +1754,231 @@ async function cmdAnnounce(i) {
     ],
   });
   return i.reply({ content: `✅ Announcement sent to <#${channel.id}>`, ephemeral: true });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CODE COMMANDS
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function cmdDropCode(i) {
+  if (!await guardAdmin(i)) return;
+  const code     = i.options.getString("code").toUpperCase().trim();
+  const reward   = i.options.getInteger("reward");
+  const minutes  = i.options.getInteger("minutes");
+  const maxUses  = i.options.getInteger("max_uses") ?? 0;
+  const channel  = i.options.getChannel("channel");
+
+  if (db.getCode(code)) {
+    return i.reply({ content: `❌ Code **${code}** already exists. Remove it first.`, ephemeral: true });
+  }
+
+  const expiresAt = minutes > 0 ? Date.now() + minutes * 60 * 1000 : null;
+
+  db.addCode({
+    code,
+    reward,
+    maxUses,
+    uses:      0,
+    expiresAt,
+    permanent: false,
+    createdBy: i.user.tag,
+    usedBy:    [],
+  });
+
+  const expireText = minutes > 0 ? `⏰ Expires in **${minutes} minute(s)**` : "⏰ No expiry";
+  const usesText   = maxUses > 0 ? `👥 Max uses: **${maxUses}**` : "👥 Unlimited uses";
+
+  const embed = new EmbedBuilder()
+    .setColor(0xffd700)
+    .setTitle("🎉 Code Dropped!")
+    .setDescription(
+      `A new code has been dropped!
+
+` +
+      `**Code:** ||\`${code}\`||
+` +
+      `**Reward:** ${formatCoins(reward)}
+` +
+      `${expireText}
+${usesText}
+
+` +
+      `Use \`/redeem ${code}\` to claim your coins!`
+    );
+
+  // Announce in specified channel, default code channel, or reply
+  const announceChannel = channel || (db.getCodeChannel() ? await client.channels.fetch(db.getCodeChannel()).catch(() => null) : null);
+  if (announceChannel) {
+    await announceChannel.send({ embeds: [embed] });
+    return i.reply({ content: `✅ Code **${code}** dropped in <#${announceChannel.id}>!`, ephemeral: true });
+  } else {
+    return i.reply({ embeds: [embed] });
+  }
+}
+
+async function cmdMakeCode(i) {
+  if (!await guardAdmin(i)) return;
+  const code    = i.options.getString("code").toUpperCase().trim();
+  const reward  = i.options.getInteger("reward");
+  const maxUses = i.options.getInteger("max_uses") ?? 0;
+  const channel = i.options.getChannel("channel");
+
+  if (db.getCode(code)) {
+    return i.reply({ content: `❌ Code **${code}** already exists.`, ephemeral: true });
+  }
+
+  db.addCode({
+    code,
+    reward,
+    maxUses,
+    uses:      0,
+    expiresAt: null,
+    permanent: true,
+    createdBy: i.user.tag,
+    usedBy:    [],
+  });
+
+  const usesText = maxUses > 0 ? `👥 Max uses: **${maxUses}**` : "👥 Unlimited uses";
+
+  const embed = new EmbedBuilder()
+    .setColor(0x00b4ff)
+    .setTitle("📌 Permanent Code Created!")
+    .setDescription(
+      `A new permanent code is now active!
+
+` +
+      `**Code:** ||\`${code}\`||
+` +
+      `**Reward:** ${formatCoins(reward)}
+` +
+      `⏰ Never expires
+${usesText}
+
+` +
+      `Use \`/redeem ${code}\` to claim your coins!`
+    );
+
+  const announceChannel = channel || (db.getCodeChannel() ? await client.channels.fetch(db.getCodeChannel()).catch(() => null) : null);
+  if (announceChannel) {
+    await announceChannel.send({ embeds: [embed] });
+    return i.reply({ content: `✅ Permanent code **${code}** created and announced in <#${announceChannel.id}>!`, ephemeral: true });
+  } else {
+    return i.reply({ embeds: [embed] });
+  }
+}
+
+async function cmdRemoveCode(i) {
+  if (!await guardAdmin(i)) return;
+  const code    = i.options.getString("code").toUpperCase().trim();
+  const channel = i.options.getChannel("channel");
+
+  const existing = db.getCode(code);
+  if (!existing) {
+    return i.reply({ content: `❌ No code found with name **${code}**.`, ephemeral: true });
+  }
+
+  db.removeCode(code);
+
+  const embed = new EmbedBuilder()
+    .setColor(0xff4444)
+    .setTitle("🗑️ Code Removed")
+    .setDescription(
+      `The code **\`${code}\`** has been removed and can no longer be redeemed.
+
+` +
+      `It was used **${existing.uses}** time(s) total.`
+    );
+
+  const announceChannel = channel || (db.getCodeChannel() ? await client.channels.fetch(db.getCodeChannel()).catch(() => null) : null);
+  if (announceChannel) {
+    await announceChannel.send({ embeds: [embed] });
+    return i.reply({ content: `✅ Code **${code}** removed. Announced in <#${announceChannel.id}>.`, ephemeral: true });
+  } else {
+    return i.reply({ embeds: [embed] });
+  }
+}
+
+async function cmdRedeem(i) {
+  const code = i.options.getString("code").toUpperCase().trim();
+  const entry = db.getCode(code);
+
+  if (!entry) {
+    return i.reply({ content: "❌ Invalid code. Check the code and try again.", ephemeral: true });
+  }
+
+  // Check expiry
+  if (entry.expiresAt && Date.now() > entry.expiresAt) {
+    return i.reply({ content: "❌ This code has expired.", ephemeral: true });
+  }
+
+  // Check max uses
+  if (entry.maxUses > 0 && entry.uses >= entry.maxUses) {
+    return i.reply({ content: "❌ This code has reached its maximum uses.", ephemeral: true });
+  }
+
+  // Check if user already redeemed
+  if (entry.usedBy.includes(i.user.id)) {
+    return i.reply({ content: "❌ You have already redeemed this code.", ephemeral: true });
+  }
+
+  // Award coins
+  db.redeemCode(code, i.user.id);
+  db.addCoins(i.user.id, i.user.username, entry.reward);
+
+  const newBal = db.getUser(i.user.id).balance;
+
+  return i.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x00ff88)
+        .setTitle("🎉 Code Redeemed!")
+        .setDescription(
+          `You successfully redeemed **\`${code}\`**!
+
+` +
+          `${COIN_EMOJI} You received **${formatCoins(entry.reward)}**
+` +
+          `💰 New balance: **${formatCoins(newBal)}**`
+        ),
+    ],
+    ephemeral: true,
+  });
+}
+
+async function cmdCodes(i) {
+  if (!await guardAdmin(i)) return;
+
+  const codes = db.getAllCodes();
+  if (!codes.length) {
+    return i.reply({ content: "📭 No active codes right now.", ephemeral: true });
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x7289da)
+    .setTitle("🎟️ All Active Codes");
+
+  codes.forEach((c) => {
+    const expiry  = c.expiresAt ? `<t:${Math.floor(c.expiresAt / 1000)}:R>` : "Never";
+    const uses    = c.maxUses > 0 ? `${c.uses}/${c.maxUses}` : `${c.uses}/∞`;
+    const type    = c.permanent ? "📌 Permanent" : "⏰ Timed";
+    embed.addFields({
+      name:  `\`${c.code}\` — ${formatCoins(c.reward)}`,
+      value: `${type} • Uses: ${uses} • Expires: ${expiry}
+Created by: ${c.createdBy}`,
+      inline: false,
+    });
+  });
+
+  return i.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function cmdSetCodeChannel(i) {
+  if (!await guardAdmin(i)) return;
+  const channel = i.options.getChannel("channel");
+  db.setCodeChannel(channel.id);
+  return i.reply({
+    embeds: [adminEmbed(`✅ Code announcement channel set to <#${channel.id}>`)],
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
