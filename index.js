@@ -526,15 +526,12 @@ async function registerCommands() {
   }
 }
 
-// ─── Message Reward (1 msg = 1 LEN Coin, 5s cooldown) ─────────────────────────
-const msgCooldowns = new Map();
-
+// ─── Message Reward — 1 message = 1 LEN Coin, no cooldown ────────────────────
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot || !msg.guild) return;
-  const now = Date.now();
-  if (msgCooldowns.has(msg.author.id) && now - msgCooldowns.get(msg.author.id) < 5000) return;
-  msgCooldowns.set(msg.author.id, now);
-  db.addMessageCoin(msg.author.id, msg.author.username);   // ← correct method
+  const user = db.getUser(msg.author.id, msg.author.username);
+  user.balance += 1;
+  db.save();
 });
 
 // ─── Interaction Router ────────────────────────────────────────────────────────
@@ -609,13 +606,8 @@ async function cmdBalance(i) {
         .setColor(0xffd700)
         .setTitle(`${COIN_EMOJI} ${target.username}'s Balance`)
         .setThumbnail(target.displayAvatarURL())
-        .addFields(
-          { name: "💰 Wallet",       value: formatCoins(data.balance),     inline: true },
-          { name: "📈 Total Earned", value: formatCoins(data.totalEarned), inline: true },
-          { name: "💬 Messages",     value: data.messages.toLocaleString(), inline: true }
-        )
-        .setFooter({ text: "1 message = 1 LEN Coin • 100 LEN = 15 Robux" })
-        .setTimestamp(),
+        .setDescription(`**Balance:** ${formatCoins(data.balance)}`)
+        .setFooter({ text: "1 message = 1 LEN Coin • 100 LEN = 15 Robux" }),
     ],
   });
 }
@@ -672,7 +664,7 @@ async function cmdLeaderboard(i) {
         .setColor(0xffd700)
         .setTitle(`${COIN_EMOJI} LEN Coin Leaderboard`)
         .setDescription(desc)
-        .setTimestamp(),
+        ,
     ],
   });
 }
@@ -1202,7 +1194,7 @@ async function cmdCheckUses(i) {
   const embed = new EmbedBuilder()
     .setColor(0x00b4ff)
     .setTitle(`<:Robux:1483371422368792648> Pending Redemptions (${pending.length})`)
-    .setTimestamp();
+    ;
 
   pending.forEach((r) => {
     embed.addFields({
@@ -1211,7 +1203,7 @@ async function cmdCheckUses(i) {
         `👤 **Discord:** <@${r.userId}> (${r.username})\n` +
         `🎮 **Roblox:** \`${r.robloxUsername}\`\n` +
         `🔗 **Gamepass:** ${r.gampassLink}\n` +
-        `🕐 **Submitted:** <t:${Math.floor(r.timestamp / 1000)}:R>\n` +
+
         `> Use \`/use-done ${r.id}\` to mark as paid`,
       inline: false,
     });
@@ -1255,7 +1247,7 @@ async function cmdUseDone(i) {
             `**Processed by:** ${i.user.tag}\n\n` +
             `> Thank you for using the LEN Coin Shop! <:Coin:1483370941583982612>`
           )
-          .setTimestamp(),
+          ,
       ],
     });
 
@@ -1305,17 +1297,14 @@ async function cmdUserinfo(i) {
         .setTitle(`👤 ${user.tag}`)
         .setThumbnail(user.displayAvatarURL({ size: 256 }))
         .addFields(
-          { name: "🪪 ID",      value: user.id,                                                inline: true },
-          { name: "📅 Joined",  value: `<t:${Math.floor(target.joinedTimestamp / 1000)}:R>`,   inline: true },
-          { name: "📝 Account", value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`,    inline: true },
-          { name: "💰 Balance", value: formatCoins(balance),                                   inline: true },
-          { name: "⚠️ Warns",  value: `${warns}`,                                             inline: true },
-          { name: "🤖 Bot",     value: user.bot ? "Yes" : "No",                               inline: true },
+          { name: "🪪 ID",        value: user.id,                inline: true },
+          { name: "💰 Balance",   value: formatCoins(balance),   inline: true },
+          { name: "⚠️ Warns",    value: `${warns}`,             inline: true },
           { name: `🎭 Roles (${target.roles.cache.size - 1})`,
             value: roles.length > 1024 ? "Too many to display" : roles,
             inline: false },
         )
-        .setTimestamp(),
+        ,
     ],
   });
 }
@@ -1330,16 +1319,15 @@ async function cmdServerinfo(i) {
         .setTitle(`🏠 ${g.name}`)
         .setThumbnail(g.iconURL())
         .addFields(
-          { name: "🪪 ID",       value: g.id,                                             inline: true },
-          { name: "👑 Owner",    value: `<@${g.ownerId}>`,                                inline: true },
-          { name: "📅 Created",  value: `<t:${Math.floor(g.createdTimestamp / 1000)}:R>`, inline: true },
-          { name: "👥 Members",  value: g.memberCount.toLocaleString(),                   inline: true },
-          { name: "💬 Channels", value: g.channels.cache.size.toLocaleString(),           inline: true },
-          { name: "🎭 Roles",    value: g.roles.cache.size.toLocaleString(),              inline: true },
-          { name: "😀 Emojis",   value: g.emojis.cache.size.toLocaleString(),             inline: true },
-          { name: "💎 Boost",    value: `Tier ${g.premiumTier} (${g.premiumSubscriptionCount} boosts)`, inline: true },
+          { name: "🪪 ID",       value: g.id,                                                             inline: true },
+          { name: "👑 Owner",    value: `<@${g.ownerId}>`,                                               inline: true },
+          { name: "👥 Members",  value: g.memberCount.toLocaleString(),                                  inline: true },
+          { name: "💬 Channels", value: g.channels.cache.size.toLocaleString(),                          inline: true },
+          { name: "🎭 Roles",    value: g.roles.cache.size.toLocaleString(),                             inline: true },
+          { name: "😀 Emojis",   value: g.emojis.cache.size.toLocaleString(),                            inline: true },
+          { name: "💎 Boost",    value: `Tier ${g.premiumTier} (${g.premiumSubscriptionCount} boosts)`,  inline: true },
         )
-        .setTimestamp(),
+        ,
     ],
   });
 }
@@ -1417,7 +1405,7 @@ function buildStockEmbed(robux, updatedBy) {
       { name: "🛒 How to Buy", value: "`/shop` then `/buy <package>`",           inline: true }
     )
     .setFooter({ text: `Last updated by ${updatedBy?.username ?? "Admin"} • LEN Coin Store` })
-    .setTimestamp();
+    ;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1545,7 +1533,7 @@ async function cmdWarn(i) {
             { name: "Warned by",        value: i.user.tag, inline: true  },
             { name: "Total Warnings",   value: `${count}`, inline: true  }
           )
-          .setTimestamp(),
+          ,
       ],
     });
   } catch { /* DMs closed */ }
@@ -1563,7 +1551,7 @@ async function cmdWarnings(i) {
       embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`⚠️ ${target.username}'s Warnings`).setDescription("No warnings on record.")],
     });
   const desc = warnings
-    .map((w, idx) => `**${idx + 1}.** ${w.reason}\n> By ${w.by} • <t:${Math.floor(w.timestamp / 1000)}:R>`)
+    .map((w, idx) => `**${idx + 1}.** ${w.reason}\n> By ${w.by}`)
     .join("\n\n");
   return i.reply({
     embeds: [
@@ -1692,7 +1680,7 @@ async function cmdAnnounce(i) {
         .setTitle(`📢 ${title}`)
         .setDescription(message)
         .setFooter({ text: `Announced by ${i.user.username}` })
-        .setTimestamp(),
+        ,
     ],
   });
   return i.reply({ content: `✅ Announcement sent to <#${channel.id}>`, ephemeral: true });
@@ -1707,11 +1695,11 @@ function adminEmbed(desc) {
     .setColor(0x7289da)
     .setTitle("🔧 Admin Action")
     .setDescription(desc)
-    .setTimestamp();
+    ;
 }
 
 function modEmbed(title, desc, color) {
-  return new EmbedBuilder().setColor(color).setTitle(title).setDescription(desc).setTimestamp();
+  return new EmbedBuilder().setColor(color).setTitle(title).setDescription(desc);
 }
 
 function buildDeck() {
