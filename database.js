@@ -8,6 +8,8 @@ const DEFAULT_DB = {
   shop:          [],
   stockMessages: {},
   warnings:      {},
+  redemptions:   [],
+  nextRedemptionId: 1,
 };
 
 class Database {
@@ -19,6 +21,8 @@ class Database {
     if (!this.data.shop)          this.data.shop          = [];
     if (!this.data.stockMessages) this.data.stockMessages = {};
     if (!this.data.warnings)      this.data.warnings      = {};
+    if (!this.data.redemptions)   this.data.redemptions   = [];
+    if (!this.data.nextRedemptionId) this.data.nextRedemptionId = 1;
   }
 
   save() {
@@ -43,10 +47,10 @@ class Database {
   }
 
   addCoins(userId, username, amount) {
-    const u      = this.getUser(userId, username || "Unknown");
-    u.balance   += amount;
+    const u       = this.getUser(userId, username || "Unknown");
+    u.balance    += amount;
     u.totalEarned += amount;
-    u.messages  += 1;
+    u.messages   += 1;
     if (u.balance < 0) u.balance = 0;
     this.save();
   }
@@ -108,7 +112,9 @@ class Database {
 
   addShopItem(item) {
     this.data.shop = this.data.shop ?? [];
-    const idx = this.data.shop.findIndex(i => i.name.toLowerCase() === item.name.toLowerCase());
+    const idx = this.data.shop.findIndex(
+      (i) => i.name.toLowerCase() === item.name.toLowerCase()
+    );
     if (idx >= 0) this.data.shop[idx] = item;
     else          this.data.shop.push(item);
     this.save();
@@ -116,18 +122,24 @@ class Database {
 
   removeShopItem(name) {
     const before   = (this.data.shop ?? []).length;
-    this.data.shop = (this.data.shop ?? []).filter(i => i.name.toLowerCase() !== name.toLowerCase());
+    this.data.shop = (this.data.shop ?? []).filter(
+      (i) => i.name.toLowerCase() !== name.toLowerCase()
+    );
     this.save();
     return this.data.shop.length < before;
   }
 
   decrementStock(itemName) {
-    const item = (this.data.shop ?? []).find(i => i.name.toLowerCase() === itemName.toLowerCase());
+    const item = (this.data.shop ?? []).find(
+      (i) => i.name.toLowerCase() === itemName.toLowerCase()
+    );
     if (item && item.stock > 0) { item.stock -= 1; this.save(); }
   }
 
   // ─── Stock Messages ─────────────────────────────────────────────────────────
-  getStockMessage(channelId) { return this.data.stockMessages[channelId] ?? null; }
+  getStockMessage(channelId) {
+    return this.data.stockMessages[channelId] ?? null;
+  }
 
   setStockMessage(channelId, messageId) {
     this.data.stockMessages[channelId] = messageId;
@@ -137,16 +149,53 @@ class Database {
   // ─── Warnings ───────────────────────────────────────────────────────────────
   addWarning(userId, username, reason, by) {
     this.data.warnings[userId] = this.data.warnings[userId] ?? [];
-    this.data.warnings[userId].push({ reason, by, timestamp: Date.now(), username });
+    this.data.warnings[userId].push({
+      reason,
+      by,
+      timestamp: Date.now(),
+      username,
+    });
     this.save();
     return this.data.warnings[userId].length;
   }
 
-  getWarnings(userId) { return this.data.warnings[userId] ?? []; }
+  getWarnings(userId) {
+    return this.data.warnings[userId] ?? [];
+  }
 
   clearWarnings(userId) {
     this.data.warnings[userId] = [];
     this.save();
+  }
+
+  // ─── Redemptions ─────────────────────────────────────────────────────────────
+  addRedemption(data) {
+    const id = this.data.nextRedemptionId++;
+    this.data.redemptions.push({ id, ...data });
+    this.save();
+    return id;
+  }
+
+  getRedemption(id) {
+    return this.data.redemptions.find((r) => r.id === id) || null;
+  }
+
+  getPendingRedemptions() {
+    return this.data.redemptions.filter((r) => r.status === "pending");
+  }
+
+  getAllRedemptions() {
+    return this.data.redemptions;
+  }
+
+  markRedemptionPaid(id, paidBy) {
+    const r = this.data.redemptions.find((r) => r.id === id);
+    if (r) {
+      r.status = "paid";
+      r.paidBy = paidBy;
+      r.paidAt = Date.now();
+      this.save();
+    }
   }
 }
 
