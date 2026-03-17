@@ -1,10 +1,3 @@
-// ══════════════════════════════════════════════════════════════════════════════
-//  DATABASE — JSONBin.io persistent storage
-//  Set these env vars in Railway:
-//    JSONBIN_BIN_ID  — the ID of your bin  (from jsonbin.io)
-//    JSONBIN_API_KEY — your Master Key      (from jsonbin.io)
-// ══════════════════════════════════════════════════════════════════════════════
-
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_BIN_ID}`;
 const HEADERS = {
   "Content-Type":     "application/json",
@@ -74,33 +67,19 @@ class Database {
     if (!this.data.users[userId]) {
       this.data.users[userId] = {
         userId,
-        username:    username || "Unknown",
-        balance:     0,
-        totalEarned: 0,
-        messages:    0,
-        lastDaily:   null,
-        inventory:   [],
+        username: username || "Unknown",
+        balance:  0,
+        lastDaily: null,
+        inventory: [],
       };
       this.save();
     }
     return this.data.users[userId];
   }
 
-  // For gambling wins, shop purchases, admin gifts — does NOT touch message count
   addCoins(userId, username, amount) {
-    const u       = this.getUser(userId, username || "Unknown");
-    u.balance    += amount;
-    u.totalEarned += amount;
-    if (u.balance < 0) u.balance = 0;
-    this.save();
-  }
-
-  // ONLY called when a real chat message is sent
-  addMessageCoin(userId, username) {
-    const u       = this.getUser(userId, username || "Unknown");
-    u.balance    += 1;
-    u.totalEarned += 1;
-    u.messages   += 1;
+    const u   = this.getUser(userId, username || "Unknown");
+    u.balance = Math.max(0, u.balance + amount);
     this.save();
   }
 
@@ -198,7 +177,7 @@ class Database {
   // ── Warnings ────────────────────────────────────────────────────────────────
   addWarning(userId, username, reason, by) {
     this.data.warnings[userId] = this.data.warnings[userId] ?? [];
-    this.data.warnings[userId].push({ reason, by, timestamp: Date.now(), username });
+    this.data.warnings[userId].push({ reason, by, username });
     this.save();
     return this.data.warnings[userId].length;
   }
@@ -228,16 +207,11 @@ class Database {
     return this.data.redemptions.filter((r) => r.status === "pending");
   }
 
-  getAllRedemptions() {
-    return this.data.redemptions;
-  }
-
   markRedemptionPaid(id, paidBy) {
     const r = this.data.redemptions.find((r) => r.id === id);
     if (r) {
       r.status = "paid";
       r.paidBy = paidBy;
-      r.paidAt = Date.now();
       this.save();
     }
   }
