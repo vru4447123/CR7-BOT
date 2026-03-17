@@ -527,11 +527,9 @@ async function registerCommands() {
 }
 
 // ─── Message Reward — 1 message = 1 LEN Coin, no cooldown ────────────────────
-client.on("messageCreate", async (msg) => {
+client.on("messageCreate", (msg) => {
   if (msg.author.bot || !msg.guild) return;
-  const user = db.getUser(msg.author.id, msg.author.username);
-  user.balance += 1;
-  db.save();
+  db.addCoins(msg.author.id, msg.author.username, 1);
 });
 
 // ─── Interaction Router ────────────────────────────────────────────────────────
