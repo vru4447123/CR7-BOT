@@ -1,0 +1,7 @@
+# Get these from https://discord.com/developers/applications
+
+# Bot > Token
+DISCORD_TOKEN=your_bot_token_here
+
+# General Information > Application ID
+CLIENT_ID=your_client_id_here
