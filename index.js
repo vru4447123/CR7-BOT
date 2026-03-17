@@ -532,13 +532,9 @@ const msgCooldowns = new Map();
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot || !msg.guild) return;
   const now = Date.now();
-  if (
-    msgCooldowns.has(msg.author.id) &&
-    now - msgCooldowns.get(msg.author.id) < 5000
-  )
-    return;
+  if (msgCooldowns.has(msg.author.id) && now - msgCooldowns.get(msg.author.id) < 5000) return;
   msgCooldowns.set(msg.author.id, now);
-  db.addCoins(msg.author.id, msg.author.username, 1);
+  db.addMessageCoin(msg.author.id, msg.author.username);   // ← correct method
 });
 
 // ─── Interaction Router ────────────────────────────────────────────────────────
@@ -1750,6 +1746,7 @@ function handStr(h) { return h.map((c) => c.display).join(" "); }
 // ─── Boot ──────────────────────────────────────────────────────────────────────
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  await db.init();                    // ← load JSONBin data first
   await registerCommands();
   client.user.setActivity("LEN Coin Economy | /shop", { type: 3 });
 });
