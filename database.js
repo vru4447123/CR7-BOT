@@ -16,9 +16,10 @@ const DEFAULT_DATA = {
 
 class Database {
   constructor() {
-    this.data       = JSON.parse(JSON.stringify(DEFAULT_DATA));
-    this._ready     = false;
-    this._saveQueue = Promise.resolve();
+    this.data           = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    this._ready         = false;
+    this._saveQueue     = Promise.resolve();
+    this._debounceTimer = null;
   }
 
   async init() {
@@ -54,12 +55,17 @@ class Database {
       body:    JSON.stringify(data),
     }).then((r) => {
       if (!r.ok) r.text().then((t) => console.error("JSONBin PUT error:", t));
+      else console.log("💾 JSONBin saved.");
     }).catch((e) => console.error("JSONBin PUT exception:", e));
   }
 
+  // Debounced save — batches rapid writes (e.g. many messages) into one PUT
   save() {
-    this._saveQueue = this._saveQueue.then(() => this._push(this.data));
-    return this._saveQueue;
+    if (this._debounceTimer) clearTimeout(this._debounceTimer);
+    this._debounceTimer = setTimeout(() => {
+      this._debounceTimer = null;
+      this._push(this.data);
+    }, 1500); // wait 1.5s after last write before pushing
   }
 
   // ── User ────────────────────────────────────────────────────────────────────
