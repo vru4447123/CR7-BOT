@@ -1,35 +1,75 @@
-const fs   = require("fs");
-const path = require("path");
+// ══════════════════════════════════════════════════════════════════════════════
+//  DATABASE — JSONBin.io persistent storage
+//  Set these env vars in Railway:
+//    JSONBIN_BIN_ID  — the ID of your bin  (from jsonbin.io)
+//    JSONBIN_API_KEY — your Master Key      (from jsonbin.io)
+// ══════════════════════════════════════════════════════════════════════════════
 
-const DB_PATH = path.join(__dirname, "data.json");
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_BIN_ID}`;
+const HEADERS = {
+  "Content-Type":     "application/json",
+  "X-Master-Key":     process.env.JSONBIN_API_KEY,
+  "X-Bin-Versioning": "false",
+};
 
-const DEFAULT_DB = {
-  users:         {},
-  shop:          [],
-  stockMessages: {},
-  warnings:      {},
-  redemptions:   [],
+const DEFAULT_DATA = {
+  users:            {},
+  shop:             [],
+  stockMessages:    {},
+  warnings:         {},
+  redemptions:      [],
   nextRedemptionId: 1,
 };
 
 class Database {
   constructor() {
-    if (!fs.existsSync(DB_PATH)) {
-      fs.writeFileSync(DB_PATH, JSON.stringify(DEFAULT_DB, null, 2));
+    this.data       = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    this._ready     = false;
+    this._saveQueue = Promise.resolve();
+  }
+
+  async init() {
+    try {
+      const res  = await fetch(JSONBIN_URL, { headers: HEADERS });
+      const json = await res.json();
+      if (!res.ok) {
+        console.log("JSONBin: first run, pushing default data...");
+        await this._push(DEFAULT_DATA);
+        this.data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      } else {
+        this.data = json.record;
+        if (!this.data.users)            this.data.users            = {};
+        if (!this.data.shop)             this.data.shop             = [];
+        if (!this.data.stockMessages)    this.data.stockMessages    = {};
+        if (!this.data.warnings)         this.data.warnings         = {};
+        if (!this.data.redemptions)      this.data.redemptions      = [];
+        if (!this.data.nextRedemptionId) this.data.nextRedemptionId = 1;
+        console.log("✅ JSONBin loaded.");
+      }
+      this._ready = true;
+    } catch (err) {
+      console.error("JSONBin init error:", err);
+      this.data   = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      this._ready = true;
     }
-    this.data = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
-    if (!this.data.shop)          this.data.shop          = [];
-    if (!this.data.stockMessages) this.data.stockMessages = {};
-    if (!this.data.warnings)      this.data.warnings      = {};
-    if (!this.data.redemptions)   this.data.redemptions   = [];
-    if (!this.data.nextRedemptionId) this.data.nextRedemptionId = 1;
+  }
+
+  _push(data) {
+    return fetch(JSONBIN_URL, {
+      method:  "PUT",
+      headers: HEADERS,
+      body:    JSON.stringify(data),
+    }).then((r) => {
+      if (!r.ok) r.text().then((t) => console.error("JSONBin PUT error:", t));
+    }).catch((e) => console.error("JSONBin PUT exception:", e));
   }
 
   save() {
-    fs.writeFileSync(DB_PATH, JSON.stringify(this.data, null, 2));
+    this._saveQueue = this._saveQueue.then(() => this._push(this.data));
+    return this._saveQueue;
   }
 
-  // ─── User ───────────────────────────────────────────────────────────────────
+  // ── User ────────────────────────────────────────────────────────────────────
   getUser(userId, username) {
     if (!this.data.users[userId]) {
       this.data.users[userId] = {
@@ -46,12 +86,21 @@ class Database {
     return this.data.users[userId];
   }
 
+  // For gambling wins, shop purchases, admin gifts — does NOT touch message count
   addCoins(userId, username, amount) {
     const u       = this.getUser(userId, username || "Unknown");
     u.balance    += amount;
     u.totalEarned += amount;
-    u.messages   += 1;
     if (u.balance < 0) u.balance = 0;
+    this.save();
+  }
+
+  // ONLY called when a real chat message is sent
+  addMessageCoin(userId, username) {
+    const u       = this.getUser(userId, username || "Unknown");
+    u.balance    += 1;
+    u.totalEarned += 1;
+    u.messages   += 1;
     this.save();
   }
 
@@ -79,7 +128,7 @@ class Database {
       .slice(0, limit);
   }
 
-  // ─── Inventory ──────────────────────────────────────────────────────────────
+  // ── Inventory ───────────────────────────────────────────────────────────────
   getInventory(userId) {
     return this.data.users[userId]?.inventory ?? [];
   }
@@ -107,7 +156,7 @@ class Database {
     this.save();
   }
 
-  // ─── Shop ───────────────────────────────────────────────────────────────────
+  // ── Shop ────────────────────────────────────────────────────────────────────
   getShopItems() { return this.data.shop ?? []; }
 
   addShopItem(item) {
@@ -136,7 +185,7 @@ class Database {
     if (item && item.stock > 0) { item.stock -= 1; this.save(); }
   }
 
-  // ─── Stock Messages ─────────────────────────────────────────────────────────
+  // ── Stock Messages ───────────────────────────────────────────────────────────
   getStockMessage(channelId) {
     return this.data.stockMessages[channelId] ?? null;
   }
@@ -146,15 +195,10 @@ class Database {
     this.save();
   }
 
-  // ─── Warnings ───────────────────────────────────────────────────────────────
+  // ── Warnings ────────────────────────────────────────────────────────────────
   addWarning(userId, username, reason, by) {
     this.data.warnings[userId] = this.data.warnings[userId] ?? [];
-    this.data.warnings[userId].push({
-      reason,
-      by,
-      timestamp: Date.now(),
-      username,
-    });
+    this.data.warnings[userId].push({ reason, by, timestamp: Date.now(), username });
     this.save();
     return this.data.warnings[userId].length;
   }
@@ -168,7 +212,7 @@ class Database {
     this.save();
   }
 
-  // ─── Redemptions ─────────────────────────────────────────────────────────────
+  // ── Redemptions ──────────────────────────────────────────────────────────────
   addRedemption(data) {
     const id = this.data.nextRedemptionId++;
     this.data.redemptions.push({ id, ...data });
