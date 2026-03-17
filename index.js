@@ -7,6 +7,9 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   PermissionFlagsBits,
   REST,
   Routes,
@@ -159,9 +162,21 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("use")
-    .setDescription("Redeem an item from your inventory")
+    .setDescription("Redeem an item from your inventory — opens a form for your Roblox info")
     .addStringOption((o) =>
       o.setName("item").setDescription("Item name").setRequired(true)
+    ),
+
+  // ── Redemption Admin ───────────────────────────────────────────────────────
+  new SlashCommandBuilder()
+    .setName("check-uses")
+    .setDescription("[Admin] View all pending Robux redemption requests"),
+
+  new SlashCommandBuilder()
+    .setName("use-done")
+    .setDescription("[Admin] Mark a redemption as paid and notify the user")
+    .addIntegerOption((o) =>
+      o.setName("id").setDescription("Redemption request ID").setRequired(true)
     ),
 
   // ── Info ───────────────────────────────────────────────────────────────────
@@ -521,6 +536,7 @@ client.on("messageCreate", async (msg) => {
 // ─── Interaction Router ────────────────────────────────────────────────────────
 client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) return handleButton(interaction);
+  if (interaction.isModalSubmit()) return handleModal(interaction);
   if (!interaction.isChatInputCommand()) return;
 
   try {
@@ -536,6 +552,8 @@ client.on("interactionCreate", async (interaction) => {
       case "buy":            return cmdBuy(interaction);
       case "inventory":      return cmdInventory(interaction);
       case "use":            return cmdUse(interaction);
+      case "check-uses":     return cmdCheckUses(interaction);
+      case "use-done":       return cmdUseDone(interaction);
       case "userinfo":       return cmdUserinfo(interaction);
       case "serverinfo":     return cmdServerinfo(interaction);
       case "show-stock":     return cmdShowStock(interaction);
@@ -1061,19 +1079,205 @@ async function cmdUse(i) {
   const inv = db.getInventory(i.user.id);
   const idx = inv.findIndex((it) => it.toLowerCase().includes(input));
   if (idx === -1)
-    return i.reply({ content: "❌ You don't have that item.", ephemeral: true });
-  const name = inv[idx];
-  db.removeFromInventory(i.user.id, name);
+    return i.reply({ content: "❌ You don't have that item. Check `/inventory`.", ephemeral: true });
+
+  const itemName = inv[idx];
+
+  // Only show the form for Robux packages — other items just confirm directly
+  const isRobux = itemName.toLowerCase().includes("robux");
+  if (!isRobux) {
+    db.removeFromInventory(i.user.id, itemName);
+    return i.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x00ff88)
+          .setTitle("✨ Item Redeemed")
+          .setDescription(`You redeemed **${itemName}**!\n\n> 📩 Contact staff to receive your reward.`),
+      ],
+    });
+  }
+
+  // Show modal form for Robux items
+  const modal = new ModalBuilder()
+    .setCustomId(`redeem_modal_${i.user.id}_${encodeURIComponent(itemName)}`)
+    .setTitle("Robux Redemption Form");
+
+  const usernameInput = new TextInputBuilder()
+    .setCustomId("roblox_username")
+    .setLabel("Your Roblox Username")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g. Builderman")
+    .setRequired(true);
+
+  const gampassInput = new TextInputBuilder()
+    .setCustomId("gamepass_link")
+    .setLabel("Gamepass Link")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("https://www.roblox.com/game-pass/...")
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(usernameInput),
+    new ActionRowBuilder().addComponents(gampassInput)
+  );
+
+  return i.showModal(modal);
+}
+
+// ── Modal submission handler ───────────────────────────────────────────────────
+async function handleModal(i) {
+  if (!i.customId.startsWith("redeem_modal_")) return;
+
+  const parts    = i.customId.split("_");
+  // format: redeem_modal_USERID_ITEMNAME
+  const userId   = parts[2];
+  const itemName = decodeURIComponent(parts.slice(3).join("_"));
+
+  if (i.user.id !== userId)
+    return i.reply({ content: "❌ This form isn't for you.", ephemeral: true });
+
+  const robloxUsername = i.fields.getTextInputValue("roblox_username").trim();
+  const gampassLink    = i.fields.getTextInputValue("gamepass_link").trim();
+
+  // Validate gamepass link loosely
+  if (!gampassLink.includes("roblox.com")) {
+    return i.reply({ content: "❌ That doesn't look like a valid Roblox gamepass link. Please try `/use` again.", ephemeral: true });
+  }
+
+  // Remove item from inventory
+  db.removeFromInventory(userId, itemName);
+
+  // Save the redemption request
+  const requestId = db.addRedemption({
+    userId,
+    username:       i.user.username,
+    itemName,
+    robloxUsername,
+    gampassLink,
+    timestamp:      Date.now(),
+    status:         "pending",
+  });
+
   return i.reply({
     embeds: [
       new EmbedBuilder()
         .setColor(0x00ff88)
-        .setTitle("✨ Item Redeemed")
+        .setTitle("<:Coin:1483370941583982612> Redemption Submitted!")
         .setDescription(
-          `You redeemed **${name}**!\n\n> 📩 Contact staff to receive your reward.`
+          `Your request has been submitted! Staff will process it soon.\n\n` +
+          `**Item:** ${itemName}\n` +
+          `**Roblox Username:** ${robloxUsername}\n` +
+          `**Gamepass Link:** ${gampassLink}\n\n` +
+          `**Request ID:** \`#${requestId}\`\n\n` +
+          `> You'll receive a DM when your Robux has been sent! <:Robux:1483371422368792648>`
         ),
     ],
+    ephemeral: true,
   });
+}
+
+// ── /check-uses ───────────────────────────────────────────────────────────────
+async function cmdCheckUses(i) {
+  if (!await guardAdmin(i)) return;
+
+  const pending = db.getPendingRedemptions();
+
+  if (!pending.length) {
+    return i.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x00ff88)
+          .setTitle("✅ No Pending Requests")
+          .setDescription("There are no pending Robux redemptions right now."),
+      ],
+      ephemeral: true,
+    });
+  }
+
+  // Split into pages of 5 if needed
+  const embed = new EmbedBuilder()
+    .setColor(0x00b4ff)
+    .setTitle(`<:Robux:1483371422368792648> Pending Redemptions (${pending.length})`)
+    .setTimestamp();
+
+  pending.forEach((r) => {
+    embed.addFields({
+      name: `#${r.id} — ${r.itemName}`,
+      value:
+        `👤 **Discord:** <@${r.userId}> (${r.username})\n` +
+        `🎮 **Roblox:** \`${r.robloxUsername}\`\n` +
+        `🔗 **Gamepass:** ${r.gampassLink}\n` +
+        `🕐 **Submitted:** <t:${Math.floor(r.timestamp / 1000)}:R>\n` +
+        `> Use \`/use-done ${r.id}\` to mark as paid`,
+      inline: false,
+    });
+  });
+
+  return i.reply({ embeds: [embed], ephemeral: true });
+}
+
+// ── /use-done ─────────────────────────────────────────────────────────────────
+async function cmdUseDone(i) {
+  if (!await guardAdmin(i)) return;
+
+  const requestId = i.options.getInteger("id");
+  const request   = db.getRedemption(requestId);
+
+  if (!request) {
+    return i.reply({ content: `❌ No redemption request found with ID **#${requestId}**.`, ephemeral: true });
+  }
+
+  if (request.status === "paid") {
+    return i.reply({ content: `❌ Request **#${requestId}** has already been marked as paid.`, ephemeral: true });
+  }
+
+  // Mark as paid
+  db.markRedemptionPaid(requestId, i.user.tag);
+
+  // DM the user
+  try {
+    const user = await client.users.fetch(request.userId);
+    await user.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x00ff88)
+          .setTitle("<:Robux:1483371422368792648> Your Robux Has Been Sent!")
+          .setDescription(
+            `Your redemption request has been fulfilled! 🎉\n\n` +
+            `**Item:** ${request.itemName}\n` +
+            `**Roblox Username:** ${request.robloxUsername}\n` +
+            `**Gamepass Link:** ${request.gampassLink}\n\n` +
+            `**Request ID:** \`#${requestId}\`\n` +
+            `**Processed by:** ${i.user.tag}\n\n` +
+            `> Thank you for using the LEN Coin Shop! <:Coin:1483370941583982612>`
+          )
+          .setTimestamp(),
+      ],
+    });
+
+    return i.reply({
+      embeds: [
+        adminEmbed(
+          `✅ Request **#${requestId}** marked as paid!\n\n` +
+          `**User:** <@${request.userId}> (${request.username})\n` +
+          `**Item:** ${request.itemName}\n` +
+          `**Roblox:** \`${request.robloxUsername}\`\n\n` +
+          `📩 DM sent to the user successfully.`
+        ),
+      ],
+    });
+  } catch {
+    return i.reply({
+      embeds: [
+        adminEmbed(
+          `✅ Request **#${requestId}** marked as paid!\n\n` +
+          `**User:** <@${request.userId}> (${request.username})\n` +
+          `**Item:** ${request.itemName}\n\n` +
+          `⚠️ Could not send DM — user may have DMs disabled.`
+        ),
+      ],
+    });
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
