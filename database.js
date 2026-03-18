@@ -12,6 +12,8 @@ const DEFAULT_DATA = {
   warnings:         {},
   redemptions:      [],
   nextRedemptionId: 1,
+  codes:            {},   // { [CODE]: CodeObject }
+  codeChannel:      null, // default announcement channel ID
 };
 
 class Database {
@@ -38,6 +40,8 @@ class Database {
         if (!this.data.warnings)         this.data.warnings         = {};
         if (!this.data.redemptions)      this.data.redemptions      = [];
         if (!this.data.nextRedemptionId) this.data.nextRedemptionId = 1;
+        if (!this.data.codes)            this.data.codes            = {};
+        if (this.data.codeChannel === undefined) this.data.codeChannel = null;
         console.log("✅ JSONBin loaded.");
       }
       this._ready = true;
@@ -55,7 +59,6 @@ class Database {
       body:    JSON.stringify(data),
     }).then((r) => {
       if (!r.ok) r.text().then((t) => console.error("JSONBin PUT error:", t));
-      else console.log("💾 JSONBin saved.");
     }).catch((e) => console.error("JSONBin PUT exception:", e));
   }
 
@@ -78,7 +81,7 @@ class Database {
         lastDaily: null,
         inventory: [],
       };
-      this.save();
+      // no save here — caller will save after mutating
     }
     return this.data.users[userId];
   }
@@ -220,6 +223,44 @@ class Database {
       r.paidBy = paidBy;
       this.save();
     }
+  }
+
+  // ── Codes ────────────────────────────────────────────────────────────────────
+  addCode(codeObj) {
+    this.data.codes[codeObj.code] = codeObj;
+    this.save();
+  }
+
+  getCode(code) {
+    return this.data.codes[code.toUpperCase()] || null;
+  }
+
+  getAllCodes() {
+    return Object.values(this.data.codes);
+  }
+
+  removeCode(code) {
+    delete this.data.codes[code.toUpperCase()];
+    this.save();
+  }
+
+  redeemCode(code, userId) {
+    const c = this.data.codes[code.toUpperCase()];
+    if (c) {
+      c.uses += 1;
+      c.usedBy.push(userId);
+      this.save();
+    }
+  }
+
+  // ── Code Channel ─────────────────────────────────────────────────────────────
+  getCodeChannel() {
+    return this.data.codeChannel || null;
+  }
+
+  setCodeChannel(channelId) {
+    this.data.codeChannel = channelId;
+    this.save();
   }
 }
 
