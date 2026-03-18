@@ -580,31 +580,35 @@ const commands = [
 // ─── Register Commands ─────────────────────────────────────────────────────────
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+
+  // Step 1: Register commands globally (Discord propagates in ~1min)
+  console.log(`📡 Registering ${commands.length} commands...`);
   try {
-    console.log("📡 Clearing old commands and registering fresh...");
-
-    // Wipe global commands
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: [] });
-    console.log("🗑️  Global commands cleared.");
-
-    // Wipe guild-level commands on every guild the bot is in (kills stale cache)
-    const guilds = client.guilds.cache;
-    for (const [guildId] of guilds) {
-      try {
-        await rest.put(
-          Routes.applicationGuildCommands(process.env.CLIENT_ID, guildId),
-          { body: [] }
-        );
-      } catch { /* skip if no perms */ }
-    }
-    console.log(`🗑️  Guild commands cleared on ${guilds.size} server(s).`);
-
-    // Register all commands fresh globally
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log(`✅ ${commands.length} slash commands registered successfully.`);
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+    console.log(`✅ ${commands.length} commands registered.`);
   } catch (err) {
-    console.error("❌ Failed to register commands:", err);
+    console.error("❌ Global register failed:", err.message);
+    return;
   }
+
+  // Step 2: Also push to each guild for instant availability (no 1hr wait)
+  const guilds = client.guilds.cache;
+  console.log(`📡 Pushing to ${guilds.size} guild(s) for instant update...`);
+  for (const [guildId] of guilds) {
+    try {
+      await rest.put(
+        Routes.applicationGuildCommands(process.env.CLIENT_ID, guildId),
+        { body: commands }
+      );
+      console.log(`✅ Guild ${guildId} updated.`);
+    } catch (err) {
+      console.error(`❌ Guild ${guildId} failed:`, err.message);
+    }
+  }
+  console.log("✅ All done.");
 }
 
 // ─── Message Reward — 1 message = 1 LEN Coin, no cooldown ────────────────────
