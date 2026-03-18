@@ -612,7 +612,7 @@ client.on("messageCreate", (msg) => {
   if (msg.author.bot || !msg.guild) return;
   if (!db._ready) return;   // don't count before JSONBin has loaded
   db.addCoins(msg.author.id, msg.author.username, 1);
-  console.log(`[COIN] ${msg.author.username} earned 1 coin — balance: ${db.getUser(msg.author.id).balance}`);
+
 });
 
 // ─── Interaction Router ────────────────────────────────────────────────────────
@@ -2187,7 +2187,7 @@ function handValue(h) {
 function handStr(h) { return h.map((c) => c.display).join(" "); }
 
 // ─── Boot ──────────────────────────────────────────────────────────────────────
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   await db.init();                    // ← load JSONBin data first
   await registerCommands();
