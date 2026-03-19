@@ -477,7 +477,6 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildInvites,
   ],
 });
@@ -1588,7 +1587,8 @@ async function cmdAdminTutorial(i) {
 }
 
 async function cmdOwnerTutorial(i) {
-  if (i.user.username.toLowerCase() !== 'kosai06913') {
+  const OWNER_IDS = ['kosai06913', '1165273078750781521'];
+  if (!OWNER_IDS.includes(i.user.id) && !OWNER_IDS.includes(i.user.username.toLowerCase())) {
     return i.reply({ content: '❌ This command is only available to the bot owner.', flags: MessageFlags.Ephemeral });
   }
   const pages = [
