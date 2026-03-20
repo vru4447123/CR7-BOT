@@ -5,17 +5,18 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle,
   PermissionFlagsBits, MessageFlags,
 } = require('discord.js');
+require('dotenv').config();
 
 // ══════════════════════════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════════════════════════
-const COIN   = '<:len:1484091421014360194>';
-const ROBUX  = '<:robux:1484091318241202266>';
+const COIN  = '<:len:1484091421014360194>';
+const ROBUX = '<:robux:1484091318241202266>';
 function fmt(n) { return `${COIN} **${Number(n).toLocaleString()} LEN**`; }
 
 // ══════════════════════════════════════════════════════════════════
 //  JSONBIN DATABASE
-//  Railway env vars needed:
+//  Railway env vars:
 //    JSONBIN_BIN_ID   — bin ID from jsonbin.io
 //    JSONBIN_API_KEY  — your Master Key ($2a$10$...)
 //    DISCORD_TOKEN    — bot token
@@ -246,7 +247,7 @@ async function checkCodeExpiry() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  SHOP PACKAGES  — 100 LEN = 25 Robux
+//  SHOP PACKAGES
 // ══════════════════════════════════════════════════════════════════
 const SHOP_PACKAGES = [
   { name: 'Robux S',   coins: 100,  robux: 25  },
@@ -285,7 +286,7 @@ async function guardDebt(i) {
       embeds: [new EmbedBuilder().setColor(0xff0000).setTitle('🔒 Account Locked — You Are in Debt!')
         .setDescription(
           `Your balance is ${fmt(user.balance)} (negative).\n\n` +
-          `Your shop, inventory and purchases are **locked** until you get out of debt.\n\n` +
+          `Your shop, inventory, purchases and gambling are **locked** until you get out of debt.\n\n` +
           `**How to get out of debt:**\n` +
           `• Invite new members — each valid invite gives you **+100 LEN**\n` +
           `• Send messages — **1 LEN** per message\n` +
@@ -398,10 +399,10 @@ const commands = [
   new SlashCommandBuilder().setName('removecoin').setDescription('[Owner/Co-Owner] Remove LEN Coins from a user')
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
     .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder().setName('setcoins').setDescription('[Admin] Set a user\'s exact balance')
+  new SlashCommandBuilder().setName('setcoins').setDescription("[Admin] Set a user's exact balance")
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
     .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(0)),
-  new SlashCommandBuilder().setName('resetdaily').setDescription('[Admin] Reset a user\'s daily cooldown')
+  new SlashCommandBuilder().setName('resetdaily').setDescription("[Admin] Reset a user's daily cooldown")
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
 
   // Shop Admin
@@ -416,14 +417,14 @@ const commands = [
   new SlashCommandBuilder().setName('giveitem').setDescription('[Admin] Give an item directly to a user')
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
     .addStringOption(o => o.setName('item').setDescription('Item name').setRequired(true)),
-  new SlashCommandBuilder().setName('clearinventory').setDescription('[Admin] Clear a user\'s entire inventory')
+  new SlashCommandBuilder().setName('clearinventory').setDescription("[Admin] Clear a user's entire inventory")
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
 
   // Moderation
   new SlashCommandBuilder().setName('warn').setDescription('[Admin] Warn a user')
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
     .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(true)),
-  new SlashCommandBuilder().setName('warnings').setDescription('[Admin] View a user\'s warnings')
+  new SlashCommandBuilder().setName('warnings').setDescription("[Admin] View a user's warnings")
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
   new SlashCommandBuilder().setName('clearwarnings').setDescription('[Admin] Clear all warnings for a user')
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
@@ -460,7 +461,7 @@ const commands = [
     .addStringOption(o => o.setName('message').setDescription('Message').setRequired(true))
     .addStringOption(o => o.setName('color').setDescription('Hex color e.g. ff0000').setRequired(false)),
 
-  // Help
+  // Help & Tutorials
   new SlashCommandBuilder().setName('help').setDescription('View all commands'),
   new SlashCommandBuilder().setName('adminhelp').setDescription('[Admin] View all admin commands'),
   new SlashCommandBuilder().setName('tutorial').setDescription('How to use the bot — guide for new users'),
@@ -477,6 +478,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildInvites,
   ],
 });
@@ -517,13 +519,15 @@ async function buildInviteCache(guild) {
   } catch { /* no perms */ }
 }
 
-client.on('guildCreate',    async guild  => { await buildInviteCache(guild); });
-client.on('inviteCreate',   invite => {
+client.on('guildCreate', async guild => { await buildInviteCache(guild); });
+
+client.on('inviteCreate', invite => {
   const map = inviteCache.get(invite.guild.id) || new Map();
   map.set(invite.code, { uses: invite.uses, inviterId: invite.inviter?.id || null });
   inviteCache.set(invite.guild.id, map);
 });
-client.on('inviteDelete',   invite => {
+
+client.on('inviteDelete', invite => {
   const map = inviteCache.get(invite.guild.id);
   if (map) map.delete(invite.code);
 });
@@ -549,45 +553,72 @@ client.on('guildMemberAdd', async member => {
   if (!db.invites)   db.invites   = {};
   if (!db.hasJoined) db.hasJoined = {};
 
-  const inviterId  = usedInvite.inviter.id;
-  const inviterTag = usedInvite.inviter.tag;
-  const hasJoinedBefore = db.hasJoined[member.id] === true;
+  const inviterId        = usedInvite.inviter.id;
+  const inviterUsername  = usedInvite.inviter.username;
+  const inviterTag       = usedInvite.inviter.tag;
+  const hasJoinedBefore  = db.hasJoined[member.id] === true;
 
   if (hasJoinedBefore) {
-    try { await member.user.send({ embeds: [new EmbedBuilder().setColor(0xff8800)
-      .setTitle(`👋 Welcome Back to ${guild.name}!`)
-      .setDescription(`You rejoined **${guild.name}** using **${inviterTag}**'s invite.\n\n⚠️ Since you've been here before, **no coins** were awarded to your inviter.`)
-      .setThumbnail(guild.iconURL())] }); } catch { /* DMs closed */ }
+    // Rejoin — no coins awarded
+    try {
+      await member.user.send({
+        embeds: [new EmbedBuilder().setColor(0xff8800)
+          .setTitle(`👋 Welcome Back to ${guild.name}!`)
+          .setDescription(
+            `You rejoined **${guild.name}** using **${inviterTag}**'s invite.\n\n` +
+            `⚠️ Since you have been in this server before, **no coins** were awarded to your inviter for this rejoin.`
+          )
+          .setThumbnail(guild.iconURL())],
+      });
+    } catch { /* DMs closed */ }
     try {
       const inviterUser = await client.users.fetch(inviterId);
-      await inviterUser.send({ embeds: [new EmbedBuilder().setColor(0xff8800)
-        .setTitle('⚠️ Rejoin — No Coins Awarded')
-        .setDescription(`**${member.user.tag}** rejoined **${guild.name}** using your invite.\nSince they were already here before, **no coins** were awarded.`)
-        .setThumbnail(member.user.displayAvatarURL())] });
+      await inviterUser.send({
+        embeds: [new EmbedBuilder().setColor(0xff8800)
+          .setTitle('⚠️ Rejoin — No Coins Awarded')
+          .setDescription(
+            `**${member.user.tag}** rejoined **${guild.name}** using your invite.\n` +
+            `Since they were already in this server before, **no coins** were awarded.`
+          )
+          .setThumbnail(member.user.displayAvatarURL())],
+      });
     } catch { /* DMs closed */ }
     return;
   }
 
+  // First time join — award coins
   db.hasJoined[member.id] = true;
   db.invites[member.id]   = { inviterId, guildId: guild.id };
   await saveDB();
 
-  await dbAddCoins(inviterId, usedInvite.inviter.username, 100);
+  await dbAddCoins(inviterId, inviterUsername, 100);
   const inviterBal = (await getUser(inviterId)).balance;
 
   try {
     const inviterUser = await client.users.fetch(inviterId);
-    await inviterUser.send({ embeds: [new EmbedBuilder().setColor(0x00ff88)
-      .setTitle('🎉 Someone Joined Using Your Invite!')
-      .setDescription(`**${member.user.tag}** just joined **${guild.name}** using your invite!\n\n${COIN} You earned **+100 LEN**\n💰 New balance: **${inviterBal.toLocaleString()} LEN**`)
-      .setThumbnail(member.user.displayAvatarURL())] });
+    await inviterUser.send({
+      embeds: [new EmbedBuilder().setColor(0x00ff88)
+        .setTitle('🎉 Someone Joined Using Your Invite!')
+        .setDescription(
+          `**${member.user.tag}** just joined **${guild.name}** using your invite!\n\n` +
+          `${COIN} You earned **+100 LEN**\n` +
+          `💰 New balance: **${inviterBal.toLocaleString()} LEN**`
+        )
+        .setThumbnail(member.user.displayAvatarURL())],
+    });
   } catch { /* DMs closed */ }
 
   try {
-    await member.user.send({ embeds: [new EmbedBuilder().setColor(0x00b4ff)
-      .setTitle(`👋 Welcome to ${guild.name}!`)
-      .setDescription(`You were invited by **${inviterTag}**.\n\nStart earning ${COIN} LEN Coins by chatting, use \`/daily\` for free coins, and check \`/shop\` for Robux packages!\n\nUse \`/help\` to see all commands.`)
-      .setThumbnail(guild.iconURL())] });
+    await member.user.send({
+      embeds: [new EmbedBuilder().setColor(0x00b4ff)
+        .setTitle(`👋 Welcome to ${guild.name}!`)
+        .setDescription(
+          `You were invited by **${inviterTag}**.\n\n` +
+          `Start earning ${COIN} LEN Coins by chatting, use \`/daily\` for free coins, and check \`/shop\` for Robux packages!\n\n` +
+          `Use \`/help\` to see all commands.`
+        )
+        .setThumbnail(guild.iconURL())],
+    });
   } catch { /* DMs closed */ }
 });
 
@@ -596,23 +627,28 @@ client.on('guildMemberRemove', async member => {
   if (!db.invites) return;
   const record = db.invites[member.id];
   if (!record) return;
+
   const inviterId   = record.inviterId;
   const inviterData = await getUser(inviterId);
   inviterData.balance -= 100;
   await saveUser(inviterId, inviterData);
   const newBal = inviterData.balance;
+
   delete db.invites[member.id];
   await saveDB();
+
   try {
     const inviterUser = await client.users.fetch(inviterId);
-    await inviterUser.send({ embeds: [new EmbedBuilder().setColor(0xff4444)
-      .setTitle('😔 Your Invite Left the Server')
-      .setDescription(
-        `**${member.user.tag}** just left **${member.guild.name}**.\n\n` +
-        `${COIN} You lost **-100 LEN**\n` +
-        `💰 New balance: **${newBal.toLocaleString()} LEN**${newBal < 0 ? ' ⚠️ (negative!)' : ''}`
-      )
-      .setThumbnail(member.user.displayAvatarURL())] });
+    await inviterUser.send({
+      embeds: [new EmbedBuilder().setColor(0xff4444)
+        .setTitle('😔 Your Invite Left the Server')
+        .setDescription(
+          `**${member.user.tag}** just left **${member.guild.name}**.\n\n` +
+          `${COIN} You lost **-100 LEN**\n` +
+          `💰 New balance: **${newBal.toLocaleString()} LEN**${newBal < 0 ? '\n\n⚠️ Your balance is now **negative**! Your shop and gambling are locked until you recover.' : ''}`
+        )
+        .setThumbnail(member.user.displayAvatarURL())],
+    });
   } catch { /* DMs closed */ }
 });
 
@@ -804,7 +840,7 @@ async function cmdSlots(i) {
     else if (reels[0] === '💎')  { mult = 10; resultText = '💎 **Triple Diamonds!** 10×!'; }
     else if (reels[0] === '⭐')  { mult = 5;  resultText = '⭐ **Triple Stars!** 5×!'; }
     else                          { mult = 3;  resultText = `🎉 **Triple ${reels[0]}!** 3×!`; }
-  } else if (reels[0]===reels[1] || reels[1]===reels[2] || reels[0]===reels[2]) {
+  } else if (reels[0] === reels[1] || reels[1] === reels[2] || reels[0] === reels[2]) {
     mult = 1.5; resultText = '✨ Two of a kind! 1.5×!';
   }
   let win = 0;
@@ -939,7 +975,11 @@ async function cmdShop(i) {
     embed.addFields({ name: '\u200B', value: '**— Extra Items —**' });
     extras.forEach(it => {
       const stock = it.stock === -1 ? '∞' : it.stock === 0 ? '❌ Out of stock' : `${it.stock} left`;
-      embed.addFields({ name: `${it.emoji || '📦'} ${it.name} — ${fmt(it.price)}`, value: `${it.description}\nStock: ${stock}\n\`/buy ${it.name}\``, inline: true });
+      embed.addFields({
+        name:   `${it.emoji || '📦'} ${it.name} — ${fmt(it.price)}`,
+        value:  `${it.description}\nStock: ${stock}\n\`/buy ${it.name}\``,
+        inline: true,
+      });
     });
   }
   embed.setFooter({ text: 'Contact staff after purchase to receive your Robux' });
@@ -961,8 +1001,8 @@ async function cmdBuy(i) {
       embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle('✅ Purchase Successful!')
         .setDescription(
           `Bought **${ROBUX} ${pkg.name}** for ${fmt(pkg.coins)}\n` +
-          `You'll receive: **${ROBUX} ${pkg.robux} Robux**\n\n` +
-          `💰 Balance: ${fmt(newBal)}\n\n> 📩 Contact staff to receive your Robux!\n> Or use \`/use ${pkg.name}\` to submit a request.`
+          `You will receive: **${ROBUX} ${pkg.robux} Robux**\n\n` +
+          `💰 Balance: ${fmt(newBal)}\n\n> 📩 Use \`/use ${pkg.name}\` to submit your Roblox username to staff!`
         )],
     });
   }
@@ -989,7 +1029,8 @@ async function cmdInventory(i) {
   const userData = await getUser(target.id, target.username);
   const inDebt   = userData.balance < 0;
   if (!inv.length) return i.reply({
-    embeds: [new EmbedBuilder().setColor(0x7289da).setTitle(`🎒 ${target.username}'s Inventory`)
+    embeds: [new EmbedBuilder().setColor(0x7289da)
+      .setTitle(`🎒 ${target.username}'s Inventory`)
       .setDescription('Empty! Use `/shop` to browse Robux packages.')],
   });
   const grouped = {};
@@ -1037,7 +1078,7 @@ async function handleModal(i) {
       .setDescription(
         `Your request has been submitted! Staff will process it soon.\n\n` +
         `**Item:** ${itemName}\n**Roblox Username:** \`${robloxUsername}\`\n\n` +
-        `**Request ID:** \`#${requestId}\`\n\n> ${ROBUX} You'll receive a DM when your Robux has been sent!`
+        `**Request ID:** \`#${requestId}\`\n\n> ${ROBUX} You will receive a DM when your Robux has been sent!`
       )],
     flags: MessageFlags.Ephemeral,
   });
@@ -1048,7 +1089,8 @@ async function cmdCheckRedeems(i) {
   const pending = await dbGetPendingRedeems();
   if (!pending.length) return i.reply({
     embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle('✅ No Pending Requests')
-      .setDescription('No pending Robux redemptions right now.')], flags: MessageFlags.Ephemeral,
+      .setDescription('No pending Robux redemptions right now.')],
+    flags: MessageFlags.Ephemeral,
   });
   const embed = new EmbedBuilder().setColor(0x00b4ff).setTitle(`${ROBUX} Pending Redemptions (${pending.length})`);
   pending.forEach(r => {
@@ -1073,7 +1115,8 @@ async function cmdFinishRedeem(i) {
     await user.send({
       embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`${ROBUX} Your Robux Has Been Sent!`)
         .setDescription(
-          `Your redemption request has been fulfilled! 🎉\n\n**Item:** ${request.itemName}\n` +
+          `Your redemption request has been fulfilled! 🎉\n\n` +
+          `**Item:** ${request.itemName}\n` +
           `**Roblox Username:** \`${request.robloxUsername}\`\n\n` +
           `**Request ID:** \`#${requestId}\`\n**Processed by:** ${i.user.tag}\n\n> Thank you for using the LEN Coin shop!`
         )],
@@ -1107,7 +1150,7 @@ async function cmdDropCode(i) {
   const embed = new EmbedBuilder().setColor(0xffd700).setTitle('🎉 Code Dropped!')
     .setDescription(
       `**Code:** ||\`${code}\`||\n**Reward:** ${fmt(reward)}\n` +
-      `${expiresAt ? `⏰ Expires <t:${Math.floor(expiresAt/1000)}:R> — <t:${Math.floor(expiresAt/1000)}:F>` : '⏰ No expiry'}\n` +
+      `${expiresAt ? `⏰ Expires <t:${Math.floor(expiresAt / 1000)}:R> — <t:${Math.floor(expiresAt / 1000)}:F>` : '⏰ No expiry'}\n` +
       `${maxUses > 0 ? `👥 Max uses: **${maxUses}**` : '👥 Unlimited uses'}\n\n` +
       `Use \`/redeem-code ${code}\` to claim!`
     );
@@ -1162,13 +1205,14 @@ async function cmdRemoveCode(i) {
 async function cmdRedeemCode(i) {
   const code  = i.options.getString('code').toUpperCase().trim();
   const entry = await dbGetCode(code);
-  if (!entry)                                           return i.reply({ content: '❌ Invalid code.', flags: MessageFlags.Ephemeral });
-  if (entry.expired)                                    return i.reply({ content: '❌ This code has expired.', flags: MessageFlags.Ephemeral });
-  if (entry.expiresAt && Date.now() > entry.expiresAt)  return i.reply({ content: '❌ This code has expired.', flags: MessageFlags.Ephemeral });
-  if (entry.maxUses > 0 && entry.uses >= entry.maxUses) return i.reply({ content: '❌ This code has reached its maximum uses.', flags: MessageFlags.Ephemeral });
-  if (entry.usedBy.includes(i.user.id))                 return i.reply({ content: '❌ You have already redeemed this code.', flags: MessageFlags.Ephemeral });
+  if (!entry)                                            return i.reply({ content: '❌ Invalid code.', flags: MessageFlags.Ephemeral });
+  if (entry.expired)                                     return i.reply({ content: '❌ This code has expired.', flags: MessageFlags.Ephemeral });
+  if (entry.expiresAt && Date.now() > entry.expiresAt)   return i.reply({ content: '❌ This code has expired.', flags: MessageFlags.Ephemeral });
+  if (entry.maxUses > 0 && entry.uses >= entry.maxUses)  return i.reply({ content: '❌ This code has reached its maximum uses.', flags: MessageFlags.Ephemeral });
+  if (entry.usedBy.includes(i.user.id))                  return i.reply({ content: '❌ You have already redeemed this code.', flags: MessageFlags.Ephemeral });
   await dbRedeemCode(code, i.user.id);
   await dbAddCoins(i.user.id, i.user.username, entry.reward);
+  // Check if just hit max uses
   const updated = await dbGetCode(code);
   if (updated && updated.maxUses > 0 && updated.uses >= updated.maxUses) {
     const db = await loadDB();
@@ -1179,8 +1223,10 @@ async function cmdRedeemCode(i) {
         const ch  = await client.channels.fetch(updated.announceChannelId);
         const msg = await ch.messages.fetch(updated.announceMessageId);
         const ts  = Math.floor(Date.now() / 1000);
-        await msg.edit({ embeds: [new EmbedBuilder().setColor(0x888888).setTitle('❌ Code Expired')
-          .setDescription(`~~**Code:** \`${code}\`~~\n**Reward:** ${fmt(entry.reward)}\nExpired: <t:${ts}:F>\n**Total uses:** ${updated.uses}`)] });
+        await msg.edit({
+          embeds: [new EmbedBuilder().setColor(0x888888).setTitle('❌ Code Expired')
+            .setDescription(`~~**Code:** \`${code}\`~~\n**Reward:** ${fmt(entry.reward)}\nExpired: <t:${ts}:F>\n**Total uses:** ${updated.uses}`)],
+        });
       } catch { /* ignore */ }
     }
   }
@@ -1199,9 +1245,13 @@ async function cmdCodes(i) {
   if (!active.length) return i.reply({ content: '📭 No active codes.', flags: MessageFlags.Ephemeral });
   const embed = new EmbedBuilder().setColor(0x7289da).setTitle('🎟️ All Active Codes');
   active.forEach(c => {
-    const expiry = c.expiresAt ? `<t:${Math.floor(c.expiresAt/1000)}:R> (<t:${Math.floor(c.expiresAt/1000)}:F>)` : 'Never';
+    const expiry = c.expiresAt ? `<t:${Math.floor(c.expiresAt / 1000)}:R> (<t:${Math.floor(c.expiresAt / 1000)}:F>)` : 'Never';
     const uses   = c.maxUses > 0 ? `${c.uses}/${c.maxUses}` : `${c.uses}/∞`;
-    embed.addFields({ name: `\`${c.code}\` — ${fmt(c.reward)}`, value: `${c.permanent ? '📌 Permanent' : '⏰ Timed'} • Uses: ${uses} • Expires: ${expiry}\nCreated by: ${c.createdBy}`, inline: false });
+    embed.addFields({
+      name:  `\`${c.code}\` — ${fmt(c.reward)}`,
+      value: `${c.permanent ? '📌 Permanent' : '⏰ Timed'} • Uses: ${uses} • Expires: ${expiry}\nCreated by: ${c.createdBy}`,
+      inline: false,
+    });
   });
   return i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
@@ -1295,9 +1345,9 @@ function buildStockEmbed(amount, updatedBy) {
   return new EmbedBuilder().setColor(color).setTitle('STOCK')
     .setDescription(`${status}\n\u200B`)
     .addFields(
-      { name: `${ROBUX} ROBUX`, value: `\`\`\`\n${amount.toLocaleString()} R$\n\`\`\``, inline: false },
-      { name: '💱 Rate',        value: `${COIN} **100 LEN = ${ROBUX} 25 Robux**`,        inline: true },
-      { name: '🛒 How to Buy',  value: '`/shop` then `/buy <package>`',                  inline: true },
+      { name: `${ROBUX} ROBUX`, value: `\`\`\`\n${amount.toLocaleString()} R$\n\`\`\``,    inline: false },
+      { name: '💱 Rate',        value: `${COIN} **100 LEN = ${ROBUX} 25 Robux**`,           inline: true  },
+      { name: '🛒 How to Buy',  value: '`/shop` then `/buy <package>`',                     inline: true  },
     )
     .setFooter({ text: `Last updated by ${updatedBy?.username ?? 'Admin'} • LEN Coin Store` });
 }
@@ -1385,9 +1435,15 @@ async function cmdWarn(i) {
   const reason = i.options.getString('reason');
   const count  = await dbAddWarning(target.id, target.username, reason, i.user.tag);
   try {
-    await target.send({ embeds: [new EmbedBuilder().setColor(0xffaa00)
-      .setTitle(`⚠️ You have been warned in ${i.guild.name}`)
-      .addFields({ name: 'Reason', value: reason, inline: false }, { name: 'Warned by', value: i.user.tag, inline: true }, { name: 'Total Warnings', value: `${count}`, inline: true })] });
+    await target.send({
+      embeds: [new EmbedBuilder().setColor(0xffaa00)
+        .setTitle(`⚠️ You have been warned in ${i.guild.name}`)
+        .addFields(
+          { name: 'Reason', value: reason, inline: false },
+          { name: 'Warned by', value: i.user.tag, inline: true },
+          { name: 'Total Warnings', value: `${count}`, inline: true }
+        )],
+    });
   } catch { /* DMs closed */ }
   return i.reply({ embeds: [modEmbed('⚠️ User Warned', `**User:** ${target.tag}\n**Reason:** ${reason}\n**Total:** ${count}\n**By:** ${i.user.tag}`, 0xffaa00)] });
 }
@@ -1401,7 +1457,9 @@ async function cmdWarnings(i) {
   });
   const desc = warnings.map((w, idx) => `**${idx + 1}.** ${w.reason}\n> By ${w.by}`).join('\n\n');
   return i.reply({
-    embeds: [new EmbedBuilder().setColor(0xffaa00).setTitle(`⚠️ ${target.username}'s Warnings (${warnings.length})`).setDescription(desc).setThumbnail(target.displayAvatarURL())],
+    embeds: [new EmbedBuilder().setColor(0xffaa00)
+      .setTitle(`⚠️ ${target.username}'s Warnings (${warnings.length})`)
+      .setDescription(desc).setThumbnail(target.displayAvatarURL())],
   });
 }
 
@@ -1520,7 +1578,7 @@ async function cmdHelp(i) {
   return i.reply({
     embeds: [new EmbedBuilder().setColor(0x5865f2)
       .setTitle(`${COIN} LEN Coin Bot — Commands`)
-      .setDescription('Here\'s everything you can do!\n\u200B')
+      .setDescription("Here's everything you can do!\n\u200B")
       .addFields(
         { name: '💰 Economy', inline: false, value: ['`/balance [user]` — Check balance', '`/daily` — Claim 100 free LEN every 24h', '`/pay <user> <amount>` — Send coins (Verified role required)', '`/leaderboard` — Top 10 richest users'].join('\n') },
         { name: '🎰 Gambling', inline: false, value: ['`/coinflip <heads|tails> <bet>` — 50/50, win 2×', '`/slots <bet>` — Spin the slots (up to 20× jackpot!)', '`/blackjack <bet>` — Hit, Stand or Double Down'].join('\n') },
@@ -1540,7 +1598,7 @@ async function cmdAdminHelp(i) {
       .setDescription('Requires **Admin Perm** role or **Administrator** permission.\n\u200B')
       .addFields(
         { name: `${ROBUX} Stock`, inline: false, value: ['`/show-stock <channel> <amount>` — Post stock embed', '`/set-stock <channel> <amount>` — Update stock embed'].join('\n') },
-        { name: '🎟️ Codes', inline: false, value: ['`/drop-code <code> <reward> <minutes>` — Drop timed code', '`/make-code <code> <reward>` — Permanent code', '`/remove-code <code>` — Delete a code', '`/codes` — View all active codes', '`/set-code-channel <channel>` — Default announce channel'].join('\n') },
+        { name: '🎟️ Codes', inline: false, value: ['`/drop-code <code> <reward> <minutes> [channel]` — Drop timed code', '`/make-code <code> <reward> [channel]` — Permanent code', '`/remove-code <code> [channel]` — Delete a code', '`/codes` — View all active codes', '`/set-code-channel <channel>` — Default announce channel'].join('\n') },
         { name: '💰 Economy', inline: false, value: ['`/givecoin <user> <amount>` — Add coins [Owner/Co-Owner]', '`/removecoin <user> <amount>` — Remove coins [Owner/Co-Owner]', '`/setcoins <user> <amount>` — Set exact balance', '`/resetdaily <user>` — Reset daily cooldown'].join('\n') },
         { name: '🛒 Shop', inline: false, value: ['`/additem <name> <price> <desc>` — Add shop item', '`/removeitem <name>` — Remove shop item', '`/giveitem <user> <item>` — Give item directly', '`/clearinventory <user>` — Wipe inventory'].join('\n') },
         { name: '📋 Redemptions', inline: false, value: ['`/check-redeems` — View pending Robux redemptions', '`/finish-redeem <id>` — Mark done & DM user'].join('\n') },
@@ -1555,7 +1613,7 @@ async function cmdTutorial(i) {
   return i.reply({
     embeds: [new EmbedBuilder().setColor(0x5865f2)
       .setTitle('📖 Bot Tutorial — Getting Started')
-      .setDescription('Welcome! Here\'s everything you need to know.\n\u200B')
+      .setDescription("Welcome! Here's everything you need to know.\n\u200B")
       .addFields(
         { name: `${COIN} Step 1 — Earn LEN Coins`, inline: false, value: 'Send messages in any channel — every message gives you **1 LEN Coin** automatically.\nUse `/daily` once every 24h to claim **100 free LEN Coins**.\nCheck your balance with `/balance` anytime.' },
         { name: `${ROBUX} Step 2 — Buy Robux`, inline: false, value: 'Use `/shop` to see all Robux packages.\nRate: **100 LEN Coins = 25 Robux**\nOnce you have enough, use `/buy <package name>` to purchase.\nYour purchase goes to your `/inventory`.' },
@@ -1595,38 +1653,37 @@ async function cmdOwnerTutorial(i) {
     new EmbedBuilder().setColor(0xffd700).setTitle('📖 Full Bot Guide — Page 1/5 — Roles & Permissions')
       .addFields(
         { name: '👑 Owner / Co-Owner', inline: false, value: 'Role named **`Owner`** or **`Co Owner`** / **`Co-Owner`**\n• `/givecoin` — Add coins to anyone\n• `/removecoin` — Remove coins from anyone' },
-        { name: '🔧 Admin Perm', inline: false, value: 'Role named **`Admin Perm`** (case-insensitive)\nOR Discord **Administrator** permission\nGives access to ALL admin commands.' },
+        { name: '🔧 Admin Perm', inline: false, value: 'Role named **`Admin Perm`** (case-insensitive, emojis stripped)\nOR Discord **Administrator** permission\nGives access to ALL admin commands.' },
         { name: '✅ Verified', inline: false, value: 'Role named **`Verified`**\nRequired to use `/pay` to send coins to others.' },
-        { name: '⚠️ Role Name Rules', inline: false, value: '• `Admin Perm` → all admin commands\n• `Owner` → givecoin / removecoin\n• `Co Owner` or `Co-Owner` → givecoin / removecoin\n• `Verified` → /pay' },
+        { name: '⚠️ Role Name Rules', inline: false, value: 'The bot strips all emojis and symbols before checking.\nSo **`👑 | Owner`** works the same as **`Owner`**.\n• `Admin Perm` → all admin commands\n• `Owner` → givecoin / removecoin\n• `Co Owner` or `Co-Owner` → givecoin / removecoin\n• `Verified` → /pay' },
       ).setFooter({ text: 'Page 1/5' }),
 
     new EmbedBuilder().setColor(0x00b4ff).setTitle('📖 Full Bot Guide — Page 2/5 — Economy & Coins')
       .addFields(
-        { name: `${COIN} How Coins Are Earned`, inline: false, value: '**Messages:** Every message = **1 LEN Coin** (no cooldown)\n**Daily:** `/daily` = **100 LEN Coins** every 24h (shows Discord timestamp for next claim)\n**Codes:** `/redeem-code` claims staff-dropped codes\n**Invites:** Inviting a new member = **+100 LEN Coins** to inviter\n**Admin:** `/givecoin` adds coins directly (Owner/Co-Owner only)' },
-        { name: '📉 Invite Leave Penalty', inline: false, value: 'When a member you invited leaves, you **lose 100 LEN Coins** (can go negative).\nIf balance goes negative, shop/gambling/inventory is **locked** until recovered.\nRejoins are detected — no coins awarded for people who already joined before.' },
-        { name: '💾 Data Storage', inline: false, value: 'All data saved to **JSONBin.io**\nRailway env vars needed:\n• `JSONBIN_BIN_ID`\n• `JSONBIN_API_KEY`\n• `DISCORD_TOKEN`\n• `CLIENT_ID`' },
+        { name: `${COIN} How Coins Are Earned`, inline: false, value: '**Messages:** Every message = **1 LEN** (no cooldown)\n**Daily:** `/daily` = **100 LEN** every 24h (shows Discord timestamp)\n**Codes:** `/redeem-code` claims staff-dropped codes\n**Invites:** Inviting a new member = **+100 LEN** to inviter\n**Admin:** `/givecoin` adds coins directly (Owner/Co-Owner only)' },
+        { name: '📉 Invite Leave Penalty', inline: false, value: 'When a member you invited leaves, you **lose 100 LEN** (can go negative).\nIf balance goes negative, shop/gambling/inventory is **locked** until recovered.\nRejoins are detected — no coins for people who already joined before.' },
+        { name: '💾 Data Storage', inline: false, value: 'All data saved to **JSONBin.io** — persists across Railway restarts.\nRailway env vars needed:\n`JSONBIN_BIN_ID` `JSONBIN_API_KEY` `DISCORD_TOKEN` `CLIENT_ID`' },
       ).setFooter({ text: 'Page 2/5' }),
 
     new EmbedBuilder().setColor(0x00ff88).setTitle(`📖 Full Bot Guide — Page 3/5 — ${ROBUX} Shop & Redemptions`)
       .addFields(
         { name: 'Default Robux Packages', inline: false, value: `Rate: **100 LEN = 25 Robux**\n• **Robux S** — 100 LEN → 25 R$\n• **Robux M** — 300 LEN → 75 R$\n• **Robux L** — 700 LEN → 175 R$\n• **Robux XL** — 1,500 LEN → 375 R$\n• **Robux XXL** — 3,000 LEN → 750 R$` },
-        { name: '📬 Redemption Flow', inline: false, value: '1. User buys package → inventory\n2. User runs `/use <item>`\n3. Modal pops up asking for **Roblox Username**\n4. Request saved with an ID\n5. Admin runs `/check-redeems` to see pending\n6. Send Robux in-game\n7. Admin runs `/finish-redeem <id>` → bot **DMs user** confirmation' },
+        { name: '📬 Redemption Flow', inline: false, value: '1. User buys package → inventory\n2. User runs `/use <item>`\n3. Modal asks for **Roblox Username** only\n4. Request saved with a numbered ID\n5. Admin runs `/check-redeems` to see pending\n6. Send Robux in-game\n7. Admin runs `/finish-redeem <id>` → bot **DMs user** confirmation' },
       ).setFooter({ text: 'Page 3/5' }),
 
     new EmbedBuilder().setColor(0xffd700).setTitle('📖 Full Bot Guide — Page 4/5 — Codes System')
       .addFields(
         { name: '🎟️ How Codes Work', inline: false, value: 'Each user can only redeem a code **once**.\nExpired codes auto-update their announcement message to show ❌ Expired.\nExpiry checker runs every **30 seconds**.' },
-        { name: '⏰ /drop-code', inline: false, value: '`/drop-code <code> <reward> <minutes> [channel] [max_uses]`\nDrops a timed code. `minutes=0` = never expires.\nCode shown as spoiler `||CODE||` in announcement.' },
-        { name: '📌 /make-code', inline: false, value: '`/make-code <code> <reward> [channel] [max_uses]`\nPermanent code — never expires by time.\nStill expires if max_uses is hit.' },
-        { name: '🗑️ /remove-code', inline: false, value: '`/remove-code <code> [channel]`\nDeletes the code immediately. Optionally announces removal.' },
-        { name: '📡 Default Channel', inline: false, value: '`/set-code-channel <#channel>` — Default for all code announcements.\n`/codes` — Lists all currently active codes.' },
+        { name: '⏰ /drop-code', inline: false, value: '`/drop-code <code> <reward> <minutes> [channel] [max_uses]`\nDrops a timed code. `minutes=0` = never expires by time.\nCode shown as spoiler `||CODE||` in announcement.' },
+        { name: '📌 /make-code', inline: false, value: '`/make-code <code> <reward> [channel] [max_uses]`\nPermanent code — never expires by time.' },
+        { name: '📡 Default Channel', inline: false, value: '`/set-code-channel <#channel>` — Default for all announcements.\n`/codes` — Lists all currently active codes (admin only).' },
       ).setFooter({ text: 'Page 4/5' }),
 
     new EmbedBuilder().setColor(0xff4444).setTitle('📖 Full Bot Guide — Page 5/5 — Moderation & Setup')
       .addFields(
-        { name: '🔨 Moderation Commands', inline: false, value: '`/warn` — Warn + DM the user\n`/warnings` `/clearwarnings`\n`/timeout <user> <minutes>` — Mute (shows Discord timestamp)\n`/untimeout` — Remove mute\n`/kick` `/ban` `/unban` — DMs user before action\n`/purge <amount> [user]` — Bulk delete\n`/slowmode <seconds>` — Set channel slowmode\n`/lock` `/unlock` — Channel send permissions\n`/announce <#ch> <title> <msg>` — Formatted embed' },
+        { name: '🔨 Moderation Commands', inline: false, value: '`/warn` — Warn + DM the user\n`/warnings` `/clearwarnings`\n`/timeout <user> <minutes>` — Mute (shows Discord timestamp)\n`/untimeout` — Remove mute\n`/kick` `/ban` `/unban` — DMs user before action\n`/purge <amount> [user]` — Bulk delete\n`/slowmode` `/lock` `/unlock` `/announce`' },
         { name: '⚙️ Railway Env Vars', inline: false, value: '`DISCORD_TOKEN` — Bot token\n`CLIENT_ID` — Application ID\n`JSONBIN_BIN_ID` — JSONBin bin ID\n`JSONBIN_API_KEY` — JSONBin master key' },
-        { name: '📖 Help Commands', inline: false, value: '`/help` — User command list\n`/adminhelp` — Admin command list (Admin Perm)\n`/tutorial` — Beginner guide (everyone)\n`/admin-tutorial` — Role setup guide (ephemeral)\n`/owner-tutorial` — This guide (you only)' },
+        { name: '📖 Help Commands', inline: false, value: '`/help` — User command list\n`/adminhelp` — Admin command list\n`/tutorial` — Beginner guide\n`/admin-tutorial` — Role setup guide (ephemeral)\n`/owner-tutorial` — This guide (you only)' },
       ).setFooter({ text: 'Page 5/5 — You know everything now! 🎉' }),
   ];
 
